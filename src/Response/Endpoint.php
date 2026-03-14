@@ -22,6 +22,7 @@ readonly class Endpoint
         public ?int $rateLimitRps,
         public ?int $burst,
         public ?array $headers,
+        public bool $paused,
         public DateTimeImmutable $createdAt,
         public DateTimeImmutable $updatedAt,
     ) {}

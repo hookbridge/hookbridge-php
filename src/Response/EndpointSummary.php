@@ -15,6 +15,7 @@ readonly class EndpointSummary
         public string $id,
         public string $url,
         public ?string $description,
+        public bool $paused,
         public DateTimeImmutable $createdAt,
     ) {}
 }

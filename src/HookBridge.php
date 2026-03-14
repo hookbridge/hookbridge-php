@@ -75,7 +75,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    private const USER_AGENT = 'hookbridge-php/1.3.0';
+    private const USER_AGENT = 'hookbridge-php/1.4.0';
 
     private Client $client;
     private Client $sendClient;
@@ -347,6 +347,40 @@ class HookBridge
     }
 
     /**
+     * Get delivery time-series metrics.
+     *
+     * @param string $window Time window for aggregation (1h, 24h, 7d, 30d)
+     * @param string|null $endpointId Optional endpoint ID to scope the metrics
+     *
+     * @return TimeSeriesMetrics
+     *
+     * @throws HookBridgeException
+     */
+    public function getTimeseriesMetrics(string $window = '24h', ?string $endpointId = null): TimeSeriesMetrics
+    {
+        $params = ['window' => $window];
+        if ($endpointId !== null) {
+            $params['endpoint_id'] = $endpointId;
+        }
+        $data = $this->request('GET', '/v1/metrics/timeseries?' . http_build_query($params))['data'];
+
+        return new TimeSeriesMetrics(
+            window: $data['window'],
+            buckets: array_map(
+                static fn(array $bucket) => new TimeSeriesBucket(
+                    timestamp: new DateTimeImmutable($bucket['timestamp']),
+                    succeeded: $bucket['succeeded'],
+                    failed: $bucket['failed'],
+                    retrying: $bucket['retrying'],
+                    total: $bucket['total'],
+                    avgLatencyMs: $bucket['avg_latency_ms'],
+                ),
+                $data['buckets'] ?? [],
+            ),
+        );
+    }
+
+    /**
      * List messages in the Dead Letter Queue.
      *
      * @param int|null $limit Maximum results to return (1-1000, default 100)
@@ -594,6 +628,7 @@ class HookBridge
             rateLimitRps: $data['rate_limit_rps'] ?? null,
             burst: $data['burst'] ?? null,
             headers: $data['headers'] ?? null,
+            paused: $data['paused'],
             createdAt: new DateTimeImmutable($data['created_at']),
             updatedAt: new DateTimeImmutable($data['updated_at']),
         );
@@ -633,6 +668,7 @@ class HookBridge
                     id: $e['id'],
                     url: $e['url'],
                     description: $e['description'] ?? null,
+                    paused: $e['paused'],
                     createdAt: new DateTimeImmutable($e['created_at']),
                 ),
                 $response['data']
@@ -698,6 +734,7 @@ class HookBridge
             rateLimitRps: $data['rate_limit_rps'] ?? null,
             burst: $data['burst'] ?? null,
             headers: $data['headers'] ?? null,
+            paused: $data['paused'],
             createdAt: new DateTimeImmutable($data['created_at']),
             updatedAt: new DateTimeImmutable($data['updated_at']),
         );
@@ -716,6 +753,22 @@ class HookBridge
     public function deleteEndpoint(string $endpointId): void
     {
         $this->request('DELETE', "/v1/endpoints/{$endpointId}");
+    }
+
+    public function pauseEndpoint(string $endpointId): PauseState
+    {
+        $data = $this->request('POST', "/v1/endpoints/{$endpointId}/pause")['data'];
+        return new PauseState(id: $data['id'], paused: $data['paused']);
+    }
+
+    public function resumeEndpoint(string $endpointId): PauseState
+    {
+        $data = $this->request('POST', "/v1/endpoints/{$endpointId}/resume")['data'];
+        return new PauseState(
+            id: $data['id'],
+            paused: $data['paused'],
+            messagesRequeued: $data['messages_requeued'] ?? null,
+        );
     }
 
     /**
