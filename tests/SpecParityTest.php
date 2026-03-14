@@ -83,6 +83,7 @@ final class SpecParityTest extends TestCase
             $this->jsonResponse(['data' => ['window' => '24h', 'buckets' => [['timestamp' => '2025-12-06T00:00:00Z', 'succeeded' => 10, 'failed' => 1, 'retrying' => 2, 'total' => 13, 'avg_latency_ms' => 180]]]]),
             $this->jsonResponse(['data' => ['session_id' => 'cs_test_abc123', 'checkout_url' => 'https://checkout.stripe.com/c/pay/cs_test_abc123']]),
             $this->jsonResponse(['data' => ['portal_url' => 'https://billing.stripe.com/p/session/abc123']]),
+            $this->jsonResponse(['data' => ['plan' => 'starter', 'status' => 'active', 'limits' => ['plan' => 'starter', 'messages_per_month' => 5000, 'max_projects' => 3, 'max_endpoints' => 25, 'retention_days' => 30], 'usage' => ['messages_used' => 123, 'period_start' => '2026-02-01T00:00:00Z', 'period_end' => '2026-02-28T23:59:59Z'], 'cancel_at_period_end' => false, 'current_period_end' => '2026-03-01T00:00:00Z']]),
             $this->jsonResponse(['data' => [['period_start' => '2026-02-01', 'period_end' => '2026-02-28', 'message_count' => 6102, 'overage_count' => 1102, 'plan_limit' => 5000]], 'meta' => ['total' => 6, 'limit' => 12, 'offset' => 0, 'has_more' => false]]),
             $this->jsonResponse(['data' => [['id' => 'in_1abc', 'status' => 'paid', 'amount_due' => 1000, 'amount_paid' => 1000, 'currency' => 'usd', 'period_start' => '2026-02-05T00:00:00Z', 'period_end' => '2026-03-05T00:00:00Z', 'created' => '2026-03-05T06:00:00Z', 'invoice_pdf' => 'https://pay.stripe.com/invoice/abc', 'hosted_invoice_url' => 'https://invoice.stripe.com/abc', 'lines' => [['description' => 'Starter Plan (Monthly)', 'amount' => 1000, 'quantity' => 1]]]], 'meta' => ['has_more' => false]]),
         ]);
@@ -99,6 +100,7 @@ final class SpecParityTest extends TestCase
         $timeseries = $client->getTimeseriesMetrics(endpointId: 'ep_550e8400e29b41d4a716446655440000');
         $checkout = $client->createCheckout('pro', 'monthly');
         $portal = $client->createPortal('https://app.hookbridge.io/billing');
+        $subscription = $client->getSubscription();
         $usage = $client->getUsageHistory();
         $invoices = $client->getInvoices();
 
@@ -112,6 +114,8 @@ final class SpecParityTest extends TestCase
         self::assertSame(1, $timeseries->buckets[0]->failed);
         self::assertSame('cs_test_abc123', $checkout->sessionId);
         self::assertSame('https://billing.stripe.com/p/session/abc123', $portal->portalUrl);
+        self::assertSame('starter', $subscription->plan);
+        self::assertSame(123, $subscription->usage->messagesUsed);
         self::assertSame(6102, $usage->rows[0]->messageCount);
         self::assertSame(1, $invoices->invoices[0]->lines[0]->quantity);
     }

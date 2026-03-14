@@ -34,6 +34,9 @@ use HookBridge\Response\ReplayAllMessagesResponse;
 use HookBridge\Response\ReplayBatchMessagesResponse;
 use HookBridge\Response\RotateSecretResponse;
 use HookBridge\Response\SigningKey;
+use HookBridge\Response\Subscription;
+use HookBridge\Response\SubscriptionLimits;
+use HookBridge\Response\SubscriptionUsage;
 use HookBridge\Response\SendResponse;
 use HookBridge\Response\CheckoutSession;
 use HookBridge\Response\CreateInboundEndpointResponse as InboundEndpointCreatedResponse;
@@ -75,7 +78,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    private const USER_AGENT = 'hookbridge-php/1.4.0';
+    private const USER_AGENT = 'hookbridge-php/1.4.1';
 
     private Client $client;
     private Client $sendClient;
@@ -834,6 +837,35 @@ class HookBridge
         $data = $this->request('POST', '/v1/billing/portal', $body)['data'];
 
         return new PortalSession(portalUrl: $data['portal_url']);
+    }
+
+    public function getSubscription(): Subscription
+    {
+        $data = $this->request('GET', '/v1/billing/subscription')['data'];
+        $limits = $data['limits'];
+        $usage = $data['usage'];
+
+        return new Subscription(
+            plan: $data['plan'],
+            status: $data['status'],
+            limits: new SubscriptionLimits(
+                plan: $limits['plan'],
+                messagesPerMonth: $limits['messages_per_month'],
+                maxProjects: $limits['max_projects'],
+                maxEndpoints: $limits['max_endpoints'],
+                retentionDays: $limits['retention_days'],
+                maxRetries: $limits['max_retries'] ?? null,
+            ),
+            usage: new SubscriptionUsage(
+                messagesUsed: $usage['messages_used'],
+                periodStart: new DateTimeImmutable($usage['period_start']),
+                periodEnd: new DateTimeImmutable($usage['period_end']),
+            ),
+            cancelAtPeriodEnd: $data['cancel_at_period_end'] ?? null,
+            currentPeriodEnd: isset($data['current_period_end'])
+                ? new DateTimeImmutable($data['current_period_end'])
+                : null,
+        );
     }
 
     public function getUsageHistory(int $limit = 12, int $offset = 0): UsageHistoryResponse

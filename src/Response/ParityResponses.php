@@ -72,6 +72,39 @@ readonly class PortalSession
     ) {}
 }
 
+readonly class SubscriptionLimits
+{
+    public function __construct(
+        public string $plan,
+        public int $messagesPerMonth,
+        public int $maxProjects,
+        public int $maxEndpoints,
+        public int $retentionDays,
+        public ?int $maxRetries = null,
+    ) {}
+}
+
+readonly class SubscriptionUsage
+{
+    public function __construct(
+        public int $messagesUsed,
+        public DateTimeImmutable $periodStart,
+        public DateTimeImmutable $periodEnd,
+    ) {}
+}
+
+readonly class Subscription
+{
+    public function __construct(
+        public string $plan,
+        public string $status,
+        public SubscriptionLimits $limits,
+        public SubscriptionUsage $usage,
+        public ?bool $cancelAtPeriodEnd = null,
+        public ?DateTimeImmutable $currentPeriodEnd = null,
+    ) {}
+}
+
 readonly class UsageHistoryRow
 {
     public function __construct(
