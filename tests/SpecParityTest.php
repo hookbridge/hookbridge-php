@@ -32,7 +32,6 @@ final class SpecParityTest extends TestCase
         $reflection = new ReflectionClass($client);
         foreach (['client' => $management, 'sendClient' => $send] as $property => $value) {
             $prop = $reflection->getProperty($property);
-            $prop->setAccessible(true);
             $prop->setValue($client, $value);
         }
 
@@ -58,7 +57,6 @@ final class SpecParityTest extends TestCase
         $reflection = new ReflectionClass($client);
         foreach (['client' => $management, 'sendClient' => $send] as $property => $value) {
             $prop = $reflection->getProperty($property);
-            $prop->setAccessible(true);
             $prop->setValue($client, $value);
         }
 
@@ -82,6 +80,7 @@ final class SpecParityTest extends TestCase
             $this->jsonResponse(['data' => ['id' => 'sk_550e8400e29b41d4a716446655440001', 'signing_secret' => 'whsec_new_secret_12345', 'key_hint' => '1234', 'created_at' => '2025-01-01T00:00:00Z']]),
             $this->jsonResponse(['data' => [['id' => 'sk_550e8400e29b41d4a716446655440001', 'key_hint' => '1234', 'created_at' => '2025-01-01T00:00:00Z']]]),
             new Response(204),
+            $this->jsonResponse(['data' => ['window' => '24h', 'buckets' => [['timestamp' => '2025-12-06T00:00:00Z', 'succeeded' => 10, 'failed' => 1, 'retrying' => 2, 'total' => 13, 'avg_latency_ms' => 180]]]]),
             $this->jsonResponse(['data' => ['session_id' => 'cs_test_abc123', 'checkout_url' => 'https://checkout.stripe.com/c/pay/cs_test_abc123']]),
             $this->jsonResponse(['data' => ['portal_url' => 'https://billing.stripe.com/p/session/abc123']]),
             $this->jsonResponse(['data' => [['period_start' => '2026-02-01', 'period_end' => '2026-02-28', 'message_count' => 6102, 'overage_count' => 1102, 'plan_limit' => 5000]], 'meta' => ['total' => 6, 'limit' => 12, 'offset' => 0, 'has_more' => false]]),
@@ -97,6 +96,7 @@ final class SpecParityTest extends TestCase
         $createdSigningKey = $client->createEndpointSigningKey('ep_550e8400e29b41d4a716446655440000');
         $signingKeys = $client->listEndpointSigningKeys('ep_550e8400e29b41d4a716446655440000');
         $client->deleteEndpointSigningKey('ep_550e8400e29b41d4a716446655440000', 'sk_550e8400e29b41d4a716446655440001');
+        $timeseries = $client->getTimeseriesMetrics(endpointId: 'ep_550e8400e29b41d4a716446655440000');
         $checkout = $client->createCheckout('pro', 'monthly');
         $portal = $client->createPortal('https://app.hookbridge.io/billing');
         $usage = $client->getUsageHistory();
@@ -109,6 +109,7 @@ final class SpecParityTest extends TestCase
         self::assertSame('Renamed Project', $updatedProject->name);
         self::assertSame('whsec_new_secret_12345', $createdSigningKey->signingSecret);
         self::assertSame('sk_550e8400e29b41d4a716446655440001', $signingKeys[0]->id);
+        self::assertSame(1, $timeseries->buckets[0]->failed);
         self::assertSame('cs_test_abc123', $checkout->sessionId);
         self::assertSame('https://billing.stripe.com/p/session/abc123', $portal->portalUrl);
         self::assertSame(6102, $usage->rows[0]->messageCount);
@@ -146,5 +147,53 @@ final class SpecParityTest extends TestCase
             'end_time' => '2025-12-06T23:59:59+00:00',
             'endpoint_id' => 'ep_550e8400e29b41d4a716446655440000',
         ], $body);
+    }
+
+    public function testEndpointPauseStateSurface(): void
+    {
+        $client = $this->makeClient([
+            $this->jsonResponse([
+                'data' => [
+                    'id' => 'ep_550e8400e29b41d4a716446655440000',
+                    'url' => 'https://customer.app/webhooks',
+                    'description' => 'Main production webhook',
+                    'paused' => false,
+                    'rate_limit_rps' => 10,
+                    'burst' => 20,
+                    'created_at' => '2025-12-01T10:00:00Z',
+                    'updated_at' => '2025-12-06T12:00:00Z',
+                ],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => [[
+                    'id' => 'ep_550e8400e29b41d4a716446655440000',
+                    'url' => 'https://customer.app/webhooks',
+                    'description' => 'Main production webhook',
+                    'paused' => false,
+                    'created_at' => '2025-12-01T10:00:00Z',
+                ]],
+                'meta' => ['request_id' => 'req-12345', 'next_cursor' => null],
+            ]),
+            $this->jsonResponse([
+                'data' => ['id' => 'ep_550e8400e29b41d4a716446655440000', 'paused' => true],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => ['id' => 'ep_550e8400e29b41d4a716446655440000', 'paused' => false, 'messages_requeued' => 6],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+        ]);
+
+        $endpoint = $client->getEndpoint('ep_550e8400e29b41d4a716446655440000');
+        $listed = $client->listEndpoints();
+        $paused = $client->pauseEndpoint('ep_550e8400e29b41d4a716446655440000');
+        $resumed = $client->resumeEndpoint('ep_550e8400e29b41d4a716446655440000');
+
+        self::assertFalse($endpoint->paused);
+        self::assertFalse($listed->endpoints[0]->paused);
+        self::assertTrue($paused->paused);
+        self::assertFalse($resumed->paused);
+        self::assertSame(6, $resumed->messagesRequeued);
     }
 }

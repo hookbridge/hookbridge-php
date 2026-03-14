@@ -202,6 +202,7 @@ readonly class PauseState
     public function __construct(
         public string $id,
         public bool $paused,
+        public ?int $messagesRequeued = null,
     ) {}
 }
 
