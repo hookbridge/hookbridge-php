@@ -36,6 +36,40 @@ readonly class ReplayBatchMessagesResponse
     ) {}
 }
 
+readonly class AttemptRecord
+{
+    public function __construct(
+        public string $id,
+        public int $attemptNo,
+        public DateTimeImmutable $createdAt,
+        public ?int $responseStatus = null,
+        public ?int $responseLatencyMs = null,
+        public ?int $processingMs = null,
+        public ?string $errorText = null,
+        public ?array $responseHeaders = null,
+        public ?string $retryType = null,
+        public ?int $retryAfterSeconds = null,
+        public ?string $resolvedIp = null,
+        public ?array $requestHeaders = null,
+        public ?int $dnsMs = null,
+        public ?int $tcpConnectMs = null,
+        public ?int $tlsHandshakeMs = null,
+        public ?int $ttfbMs = null,
+        public ?int $transferMs = null,
+        public ?bool $connReused = null,
+        public ?string $responseBodyUrl = null,
+        public ?bool $responseBodyTruncated = null,
+    ) {}
+}
+
+readonly class AttemptsResponse
+{
+    public function __construct(
+        public array $attempts,
+        public bool $hasMore,
+    ) {}
+}
+
 readonly class Project
 {
     public function __construct(
@@ -173,6 +207,32 @@ readonly class CreateInboundEndpointResponse
     ) {}
 }
 
+readonly class InboundMessage
+{
+    public function __construct(
+        public string $id,
+        public string $projectId,
+        public string $inboundEndpointId,
+        public string $status,
+        public int $attemptCount,
+        public int $replayCount,
+        public DateTimeImmutable $receivedAt,
+        public DateTimeImmutable $updatedAt,
+        public ?string $contentType = null,
+        public ?int $sizeBytes = null,
+        public ?string $payloadSha256 = null,
+        public ?string $idempotencyKey = null,
+        public ?DateTimeImmutable $nextAttemptAt = null,
+        public ?string $lastError = null,
+        public ?int $responseStatus = null,
+        public ?int $responseLatencyMs = null,
+        public ?int $queueWaitMs = null,
+        public ?int $totalDeliveryMs = null,
+        public ?DateTimeImmutable $deliveredAt = null,
+        public ?DateTimeImmutable $failedAt = null,
+    ) {}
+}
+
 readonly class InboundEndpoint
 {
     public function __construct(
@@ -262,6 +322,20 @@ readonly class InboundLogsResponse
         public array $entries,
         public bool $hasMore,
         public ?string $nextCursor = null,
+    ) {}
+}
+
+readonly class InboundMetrics
+{
+    public function __construct(
+        public string $window,
+        public int $totalMessages,
+        public int $succeeded,
+        public int $failed,
+        public int $retries,
+        public float $successRate,
+        public int $avgLatencyMs,
+        public int $avgDeliveryTimeMs,
     ) {}
 }
 

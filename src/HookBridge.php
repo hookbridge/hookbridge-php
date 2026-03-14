@@ -19,10 +19,13 @@ use HookBridge\Exception\ReplayLimitException;
 use HookBridge\Exception\ValidationException;
 use HookBridge\Response\APIKey;
 use HookBridge\Response\APIKeyWithSecret;
+use HookBridge\Response\AttemptRecord;
+use HookBridge\Response\AttemptsResponse;
 use HookBridge\Response\CreateEndpointResponse;
 use HookBridge\Response\DLQResponse;
 use HookBridge\Response\Endpoint;
 use HookBridge\Response\EndpointSummary;
+use HookBridge\Response\InboundMessage;
 use HookBridge\Response\ListEndpointsResponse;
 use HookBridge\Response\LogsResponse;
 use HookBridge\Response\Message;
@@ -197,6 +200,16 @@ class HookBridge
     public function replay(string $messageId): void
     {
         $this->request('POST', "/v1/messages/{$messageId}/replay");
+    }
+
+    public function getMessageAttempts(string $messageId): AttemptsResponse
+    {
+        $response = $this->request('GET', "/v1/messages/{$messageId}/attempts");
+
+        return new AttemptsResponse(
+            attempts: array_map(fn(array $attempt) => $this->parseAttemptRecord($attempt), $response['data']),
+            hasMore: $response['meta']['has_more'],
+        );
     }
 
     /**
@@ -520,15 +533,12 @@ class HookBridge
             $body['rate_limit_default'] = $rateLimitDefault;
         }
         $data = $this->request('POST', '/v1/projects', $body)['data'];
+        return $this->parseProject($data);
+    }
 
-        return new Project(
-            id: $data['id'],
-            tenantId: $data['tenant_id'],
-            name: $data['name'],
-            status: $data['status'],
-            rateLimitDefault: $data['rate_limit_default'],
-            createdAt: new DateTimeImmutable($data['created_at']),
-        );
+    public function getProject(string $projectId): Project
+    {
+        return $this->parseProject($this->request('GET', "/v1/projects/{$projectId}")['data']);
     }
 
     public function updateProject(string $projectId, ?string $name = null, ?int $rateLimitDefault = null): Project
@@ -541,15 +551,7 @@ class HookBridge
             $body['rate_limit_default'] = $rateLimitDefault;
         }
         $data = $this->request('PUT', "/v1/projects/{$projectId}", $body)['data'];
-
-        return new Project(
-            id: $data['id'],
-            tenantId: $data['tenant_id'],
-            name: $data['name'],
-            status: $data['status'],
-            rateLimitDefault: $data['rate_limit_default'],
-            createdAt: new DateTimeImmutable($data['created_at']),
-        );
+        return $this->parseProject($data);
     }
 
     public function deleteProject(string $projectId): void
@@ -1058,6 +1060,21 @@ class HookBridge
         return new SendResponse(messageId: $data['message_id'], status: $data['status']);
     }
 
+    public function getInboundMessage(string $messageId): InboundMessage
+    {
+        return $this->parseInboundMessage($this->request('GET', "/v1/inbound-messages/{$messageId}")['data']);
+    }
+
+    public function getInboundMessageAttempts(string $messageId): AttemptsResponse
+    {
+        $response = $this->request('GET', "/v1/inbound-messages/{$messageId}/attempts");
+
+        return new AttemptsResponse(
+            attempts: array_map(fn(array $attempt) => $this->parseAttemptRecord($attempt), $response['data']),
+            hasMore: $response['meta']['has_more'],
+        );
+    }
+
     public function replayAllInboundMessages(string $status, ?string $inboundEndpointId = null, ?int $limit = null): ReplayAllMessagesResponse
     {
         $params = ['status' => $status];
@@ -1250,6 +1267,11 @@ class HookBridge
         return $this->parseExportRecord($this->request('GET', "/v1/exports/{$exportId}")['data']);
     }
 
+    public function deleteExport(string $exportId): void
+    {
+        $this->request('DELETE', "/v1/exports/{$exportId}");
+    }
+
     public function downloadExport(string $exportId): string
     {
         return $this->requestWithClient($this->client, 'GET', "/v1/exports/{$exportId}/download", null, true)['location'];
@@ -1432,6 +1454,72 @@ class HookBridge
             lastError: $data['last_error'] ?? null,
             responseStatus: $data['response_status'] ?? null,
             responseLatencyMs: $data['response_latency_ms'] ?? null,
+        );
+    }
+
+    private function parseAttemptRecord(array $data): AttemptRecord
+    {
+        return new AttemptRecord(
+            id: $data['id'],
+            attemptNo: $data['attempt_no'],
+            createdAt: new DateTimeImmutable($data['created_at']),
+            responseStatus: $data['response_status'] ?? null,
+            responseLatencyMs: $data['response_latency_ms'] ?? null,
+            processingMs: $data['processing_ms'] ?? null,
+            errorText: $data['error_text'] ?? null,
+            responseHeaders: $data['response_headers'] ?? null,
+            retryType: $data['retry_type'] ?? null,
+            retryAfterSeconds: $data['retry_after_seconds'] ?? null,
+            resolvedIp: $data['resolved_ip'] ?? null,
+            requestHeaders: $data['request_headers'] ?? null,
+            dnsMs: $data['dns_ms'] ?? null,
+            tcpConnectMs: $data['tcp_connect_ms'] ?? null,
+            tlsHandshakeMs: $data['tls_handshake_ms'] ?? null,
+            ttfbMs: $data['ttfb_ms'] ?? null,
+            transferMs: $data['transfer_ms'] ?? null,
+            connReused: $data['conn_reused'] ?? null,
+            responseBodyUrl: $data['response_body_url'] ?? null,
+            responseBodyTruncated: $data['response_body_truncated'] ?? null,
+        );
+    }
+
+    private function parseProject(array $data): Project
+    {
+        return new Project(
+            id: $data['id'],
+            tenantId: $data['tenant_id'],
+            name: $data['name'],
+            status: $data['status'],
+            rateLimitDefault: $data['rate_limit_default'],
+            createdAt: new DateTimeImmutable($data['created_at']),
+        );
+    }
+
+    private function parseInboundMessage(array $data): InboundMessage
+    {
+        return new InboundMessage(
+            id: $data['id'],
+            projectId: $data['project_id'],
+            inboundEndpointId: $data['inbound_endpoint_id'],
+            status: $data['status'],
+            attemptCount: $data['attempt_count'],
+            replayCount: $data['replay_count'],
+            receivedAt: new DateTimeImmutable($data['received_at']),
+            updatedAt: new DateTimeImmutable($data['updated_at']),
+            contentType: $data['content_type'] ?? null,
+            sizeBytes: $data['size_bytes'] ?? null,
+            payloadSha256: $data['payload_sha256'] ?? null,
+            idempotencyKey: $data['idempotency_key'] ?? null,
+            nextAttemptAt: isset($data['next_attempt_at'])
+                ? new DateTimeImmutable($data['next_attempt_at'])
+                : null,
+            lastError: $data['last_error'] ?? null,
+            responseStatus: $data['response_status'] ?? null,
+            responseLatencyMs: $data['response_latency_ms'] ?? null,
+            queueWaitMs: $data['queue_wait_ms'] ?? null,
+            totalDeliveryMs: $data['total_delivery_ms'] ?? null,
+            deliveredAt: isset($data['delivered_at']) ? new DateTimeImmutable($data['delivered_at']) : null,
+            failedAt: isset($data['failed_at']) ? new DateTimeImmutable($data['failed_at']) : null,
         );
     }
 
