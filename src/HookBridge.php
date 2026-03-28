@@ -53,6 +53,8 @@ use HookBridge\Response\InboundRejection;
 use HookBridge\Response\InboundRejectionsResponse;
 use HookBridge\Response\UsageHistoryResponse;
 use HookBridge\Response\InvoicesResponse;
+use HookBridge\Response\ListenInboundEndpointResponse;
+use HookBridge\Response\ListenMessage;
 use HookBridge\Response\ListInboundEndpointsResponse;
 use HookBridge\Response\PauseState;
 use HookBridge\Response\TimeSeriesBucket;
@@ -81,7 +83,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    private const USER_AGENT = 'hookbridge-php/1.4.1';
+    private const USER_AGENT = 'hookbridge-php/1.5.0';
 
     private Client $client;
     private Client $sendClient;
@@ -929,9 +931,10 @@ class HookBridge
     }
 
     public function createInboundEndpoint(
-        string $url,
+        ?string $url = null,
         ?string $name = null,
         ?string $description = null,
+        ?string $mode = null,
         ?bool $verifyStaticToken = null,
         ?string $tokenHeaderName = null,
         ?string $tokenQueryParam = null,
@@ -951,6 +954,7 @@ class HookBridge
             'url' => $url,
             'name' => $name,
             'description' => $description,
+            'mode' => $mode,
             'verify_static_token' => $verifyStaticToken,
             'token_header_name' => $tokenHeaderName,
             'token_query_param' => $tokenQueryParam,
@@ -972,7 +976,8 @@ class HookBridge
         return new InboundEndpointCreatedResponse(
             id: $data['id'],
             name: $data['name'],
-            url: $data['url'],
+            url: $data['url'] ?? '',
+            mode: $data['mode'] ?? 'forward',
             ingestUrl: $data['ingest_url'],
             secretToken: $data['secret_token'],
             createdAt: new DateTimeImmutable($data['created_at']),
@@ -996,7 +1001,8 @@ class HookBridge
                 static fn(array $endpoint) => new InboundEndpointSummary(
                     id: $endpoint['id'],
                     name: $endpoint['name'],
-                    url: $endpoint['url'],
+                    url: $endpoint['url'] ?? '',
+                    mode: $endpoint['mode'] ?? 'forward',
                     active: $endpoint['active'],
                     paused: $endpoint['paused'],
                     createdAt: new DateTimeImmutable($endpoint['created_at']),
@@ -1015,7 +1021,8 @@ class HookBridge
         return new InboundEndpoint(
             id: $data['id'],
             name: $data['name'],
-            url: $data['url'],
+            url: $data['url'] ?? '',
+            mode: $data['mode'] ?? 'forward',
             active: $data['active'],
             paused: $data['paused'],
             verifyStaticToken: $data['verify_static_token'],
@@ -1052,6 +1059,33 @@ class HookBridge
     {
         $data = $this->request('POST', "/v1/inbound-endpoints/{$endpointId}/resume")['data'];
         return new PauseState(id: $data['id'], paused: $data['paused']);
+    }
+
+    public function listenInboundEndpoint(string $endpointId, ?string $after = null): ListenInboundEndpointResponse
+    {
+        $params = [];
+        if ($after !== null) {
+            $params['after'] = $after;
+        }
+        $path = "/v1/inbound-endpoints/{$endpointId}/listen" . (!empty($params) ? '?' . http_build_query($params) : '');
+        $response = $this->request('GET', $path);
+
+        return new ListenInboundEndpointResponse(
+            messages: array_map(
+                static fn(array $msg) => new ListenMessage(
+                    messageId: $msg['message_id'],
+                    contentType: $msg['content_type'],
+                    headers: $msg['headers'],
+                    sizeBytes: $msg['size_bytes'],
+                    receivedAt: new DateTimeImmutable($msg['received_at']),
+                    body: $msg['body'] ?? null,
+                    bodyEncoding: $msg['body_encoding'] ?? null,
+                    bodyError: $msg['body_error'] ?? null,
+                ),
+                $response['data']
+            ),
+            nextCursor: $response['meta']['next_cursor'] ?? null,
+        );
     }
 
     public function replayInboundMessage(string $messageId): SendResponse
