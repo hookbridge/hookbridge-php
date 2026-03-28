@@ -201,6 +201,7 @@ readonly class CreateInboundEndpointResponse
         public string $id,
         public string $name,
         public string $url,
+        public string $mode,
         public string $ingestUrl,
         public string $secretToken,
         public DateTimeImmutable $createdAt,
@@ -239,6 +240,7 @@ readonly class InboundEndpoint
         public string $id,
         public string $name,
         public string $url,
+        public string $mode,
         public bool $active,
         public bool $paused,
         public bool $verifyStaticToken,
@@ -259,6 +261,7 @@ readonly class InboundEndpointSummary
         public string $id,
         public string $name,
         public string $url,
+        public string $mode,
         public bool $active,
         public bool $paused,
         public DateTimeImmutable $createdAt,
@@ -377,6 +380,28 @@ readonly class InboundRejectionsResponse
     public function __construct(
         public array $entries,
         public bool $hasMore,
+        public ?string $nextCursor = null,
+    ) {}
+}
+
+readonly class ListenMessage
+{
+    public function __construct(
+        public string $messageId,
+        public string $contentType,
+        public array $headers,
+        public int $sizeBytes,
+        public DateTimeImmutable $receivedAt,
+        public mixed $body = null,
+        public ?string $bodyEncoding = null,
+        public ?string $bodyError = null,
+    ) {}
+}
+
+readonly class ListenInboundEndpointResponse
+{
+    public function __construct(
+        public array $messages,
         public ?string $nextCursor = null,
     ) {}
 }
