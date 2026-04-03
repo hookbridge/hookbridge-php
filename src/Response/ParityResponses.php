@@ -302,6 +302,167 @@ readonly class PauseState
     ) {}
 }
 
+readonly class PullEndpointCounts
+{
+    public function __construct(
+        public ?int $stored = null,
+        public ?int $fetched = null,
+        public ?int $delivered = null,
+        public ?int $total = null,
+    ) {}
+}
+
+readonly class PullEndpoint
+{
+    public function __construct(
+        public string $id,
+        public string $mode,
+        public string $ingestUrl,
+        public bool $active,
+        public bool $paused,
+        public DateTimeImmutable $createdAt,
+        public DateTimeImmutable $updatedAt,
+        public ?string $name = null,
+        public ?string $description = null,
+        public ?int $retentionDays = null,
+        public ?string $eventTypeSource = null,
+        public ?string $eventTypePath = null,
+        public ?PullEndpointCounts $counts = null,
+        public ?bool $verifyStaticToken = null,
+        public ?string $tokenHeaderName = null,
+        public ?string $tokenQueryParam = null,
+        public ?bool $verifyHmac = null,
+        public ?string $hmacHeaderName = null,
+        public ?string $timestampHeaderName = null,
+        public ?int $timestampTtlSeconds = null,
+        public ?bool $verifyIpAllowlist = null,
+        public ?array $allowedCidrs = null,
+        public ?int $ingestResponseCode = null,
+        public ?array $idempotencyHeaderNames = null,
+    ) {}
+}
+
+readonly class CreatePullEndpointResponse
+{
+    public function __construct(
+        public string $id,
+        public string $mode,
+        public string $ingestUrl,
+        public bool $active,
+        public bool $paused,
+        public DateTimeImmutable $createdAt,
+        public DateTimeImmutable $updatedAt,
+        public ?string $name = null,
+        public ?string $description = null,
+        public ?int $retentionDays = null,
+        public ?string $eventTypeSource = null,
+        public ?string $eventTypePath = null,
+        public ?PullEndpointCounts $counts = null,
+        public ?bool $verifyStaticToken = null,
+        public ?string $tokenHeaderName = null,
+        public ?string $tokenQueryParam = null,
+        public ?bool $verifyHmac = null,
+        public ?string $hmacHeaderName = null,
+        public ?string $timestampHeaderName = null,
+        public ?int $timestampTtlSeconds = null,
+        public ?bool $verifyIpAllowlist = null,
+        public ?array $allowedCidrs = null,
+        public ?int $ingestResponseCode = null,
+        public ?array $idempotencyHeaderNames = null,
+        public ?string $secretToken = null,
+    ) {}
+}
+
+readonly class PullEndpointSummary
+{
+    public function __construct(
+        public string $id,
+        public bool $active,
+        public bool $paused,
+        public string $ingestUrl,
+        public DateTimeImmutable $createdAt,
+        public ?string $name = null,
+    ) {}
+}
+
+readonly class ListPullEndpointsResponse
+{
+    public function __construct(
+        public array $endpoints,
+        public bool $hasMore,
+        public ?string $nextCursor = null,
+    ) {}
+}
+
+readonly class PullEventSummary
+{
+    public function __construct(
+        public string $id,
+        public string $status,
+        public int $sizeBytes,
+        public DateTimeImmutable $receivedAt,
+        public ?string $eventType = null,
+        public ?DateTimeImmutable $fetchedAt = null,
+        public ?DateTimeImmutable $deliveredAt = null,
+    ) {}
+}
+
+readonly class PullEventDetail
+{
+    public function __construct(
+        public string $id,
+        public string $status,
+        public string $contentType,
+        public mixed $payload,
+        public int $sizeBytes,
+        public DateTimeImmutable $receivedAt,
+        public ?string $eventType = null,
+        public ?array $headers = null,
+        public ?DateTimeImmutable $fetchedAt = null,
+        public ?DateTimeImmutable $deliveredAt = null,
+    ) {}
+}
+
+readonly class ListPullEventsResponse
+{
+    public function __construct(
+        public array $events,
+        public bool $hasMore,
+        public ?string $nextCursor = null,
+    ) {}
+}
+
+readonly class AckPullEventsResponse
+{
+    public function __construct(
+        public int $acknowledged,
+    ) {}
+}
+
+readonly class PullLogEntry
+{
+    public function __construct(
+        public string $eventId,
+        public string $pullEndpointId,
+        public string $status,
+        public int $sizeBytes,
+        public DateTimeImmutable $receivedAt,
+        public ?string $endpointName = null,
+        public ?string $eventType = null,
+        public ?DateTimeImmutable $fetchedAt = null,
+        public ?DateTimeImmutable $deliveredAt = null,
+    ) {}
+}
+
+readonly class PullLogsResponse
+{
+    public function __construct(
+        public array $entries,
+        public bool $hasMore,
+        public ?string $nextCursor = null,
+    ) {}
+}
+
 readonly class InboundLogEntry
 {
     public function __construct(
@@ -355,6 +516,25 @@ readonly class TimeSeriesBucket
 }
 
 readonly class TimeSeriesMetrics
+{
+    public function __construct(
+        public string $window,
+        public array $buckets,
+    ) {}
+}
+
+readonly class PullTimeSeriesBucket
+{
+    public function __construct(
+        public DateTimeImmutable $timestamp,
+        public int $succeeded,
+        public int $stored,
+        public int $fetched,
+        public int $total,
+    ) {}
+}
+
+readonly class PullTimeSeriesMetrics
 {
     public function __construct(
         public string $window,

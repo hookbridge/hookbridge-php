@@ -57,6 +57,19 @@ use HookBridge\Response\ListenInboundEndpointResponse;
 use HookBridge\Response\ListenMessage;
 use HookBridge\Response\ListInboundEndpointsResponse;
 use HookBridge\Response\PauseState;
+use HookBridge\Response\PullEndpoint;
+use HookBridge\Response\PullEndpointCounts;
+use HookBridge\Response\PullEndpointSummary;
+use HookBridge\Response\CreatePullEndpointResponse;
+use HookBridge\Response\ListPullEndpointsResponse;
+use HookBridge\Response\PullEventSummary;
+use HookBridge\Response\PullEventDetail;
+use HookBridge\Response\ListPullEventsResponse;
+use HookBridge\Response\AckPullEventsResponse;
+use HookBridge\Response\PullLogEntry;
+use HookBridge\Response\PullLogsResponse;
+use HookBridge\Response\PullTimeSeriesBucket;
+use HookBridge\Response\PullTimeSeriesMetrics;
 use HookBridge\Response\TimeSeriesBucket;
 use HookBridge\Response\TimeSeriesMetrics;
 use HookBridge\Response\UpdateResult;
@@ -83,7 +96,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    private const USER_AGENT = 'hookbridge-php/1.5.0';
+    private const USER_AGENT = 'hookbridge-php/1.7.0';
 
     private Client $client;
     private Client $sendClient;
@@ -822,6 +835,309 @@ class HookBridge
         return $this->createEndpointSigningKey($endpointId);
     }
 
+    public function createPullEndpoint(
+        ?string $name = null,
+        ?string $description = null,
+        ?int $retentionDays = null,
+        ?string $eventTypeSource = null,
+        ?string $eventTypePath = null,
+        ?bool $verifyStaticToken = null,
+        ?string $tokenHeaderName = null,
+        ?string $tokenQueryParam = null,
+        ?string $tokenValue = null,
+        ?bool $verifyHmac = null,
+        ?string $hmacHeaderName = null,
+        ?string $hmacSecret = null,
+        ?string $timestampHeaderName = null,
+        ?int $timestampTtlSeconds = null,
+        ?bool $verifyIpAllowlist = null,
+        ?array $allowedCidrs = null,
+        ?array $idempotencyHeaderNames = null,
+        ?int $ingestResponseCode = null,
+    ): CreatePullEndpointResponse {
+        $body = array_filter([
+            'name' => $name,
+            'description' => $description,
+            'retention_days' => $retentionDays,
+            'event_type_source' => $eventTypeSource,
+            'event_type_path' => $eventTypePath,
+            'verify_static_token' => $verifyStaticToken,
+            'token_header_name' => $tokenHeaderName,
+            'token_query_param' => $tokenQueryParam,
+            'token_value' => $tokenValue,
+            'verify_hmac' => $verifyHmac,
+            'hmac_header_name' => $hmacHeaderName,
+            'hmac_secret' => $hmacSecret,
+            'timestamp_header_name' => $timestampHeaderName,
+            'timestamp_ttl_seconds' => $timestampTtlSeconds,
+            'verify_ip_allowlist' => $verifyIpAllowlist,
+            'allowed_cidrs' => $allowedCidrs,
+            'idempotency_header_names' => $idempotencyHeaderNames,
+            'ingest_response_code' => $ingestResponseCode,
+        ], static fn($value) => $value !== null);
+
+        $data = $this->request('POST', '/v1/pull-endpoints', $body)['data'];
+        $endpoint = $this->parsePullEndpoint($data);
+
+        return new CreatePullEndpointResponse(
+            id: $endpoint->id,
+            mode: $endpoint->mode,
+            ingestUrl: $endpoint->ingestUrl,
+            active: $endpoint->active,
+            paused: $endpoint->paused,
+            createdAt: $endpoint->createdAt,
+            updatedAt: $endpoint->updatedAt,
+            name: $endpoint->name,
+            description: $endpoint->description,
+            retentionDays: $endpoint->retentionDays,
+            eventTypeSource: $endpoint->eventTypeSource,
+            eventTypePath: $endpoint->eventTypePath,
+            counts: $endpoint->counts,
+            verifyStaticToken: $endpoint->verifyStaticToken,
+            tokenHeaderName: $endpoint->tokenHeaderName,
+            tokenQueryParam: $endpoint->tokenQueryParam,
+            verifyHmac: $endpoint->verifyHmac,
+            hmacHeaderName: $endpoint->hmacHeaderName,
+            timestampHeaderName: $endpoint->timestampHeaderName,
+            timestampTtlSeconds: $endpoint->timestampTtlSeconds,
+            verifyIpAllowlist: $endpoint->verifyIpAllowlist,
+            allowedCidrs: $endpoint->allowedCidrs,
+            ingestResponseCode: $endpoint->ingestResponseCode,
+            idempotencyHeaderNames: $endpoint->idempotencyHeaderNames,
+            secretToken: $data['secret_token'] ?? null,
+        );
+    }
+
+    public function listPullEndpoints(?int $limit = null, ?string $cursor = null): ListPullEndpointsResponse
+    {
+        $params = [];
+        if ($limit !== null) {
+            $params['limit'] = (string) $limit;
+        }
+        if ($cursor !== null) {
+            $params['cursor'] = $cursor;
+        }
+        $path = '/v1/pull-endpoints' . (!empty($params) ? '?' . http_build_query($params) : '');
+        $response = $this->request('GET', $path);
+
+        return new ListPullEndpointsResponse(
+            endpoints: array_map(
+                static fn(array $endpoint) => new PullEndpointSummary(
+                    id: $endpoint['id'],
+                    active: $endpoint['active'],
+                    paused: $endpoint['paused'],
+                    ingestUrl: $endpoint['ingest_url'],
+                    createdAt: new DateTimeImmutable($endpoint['created_at']),
+                    name: $endpoint['name'] ?? null,
+                ),
+                $response['data']
+            ),
+            hasMore: !empty($response['meta']['next_cursor']),
+            nextCursor: $response['meta']['next_cursor'] ?? null,
+        );
+    }
+
+    public function getPullEndpoint(string $endpointId): PullEndpoint
+    {
+        return $this->parsePullEndpoint($this->request('GET', "/v1/pull-endpoints/{$endpointId}")['data']);
+    }
+
+    public function updatePullEndpoint(string $endpointId, array $attributes): PullEndpoint
+    {
+        $data = $this->request('PATCH', "/v1/pull-endpoints/{$endpointId}", $attributes)['data'];
+        return $this->parsePullEndpoint($data);
+    }
+
+    public function deletePullEndpoint(string $endpointId): DeleteResult
+    {
+        $data = $this->request('DELETE', "/v1/pull-endpoints/{$endpointId}")['data'];
+        return new DeleteResult(deleted: $data['deleted'], id: $data['id'] ?? null);
+    }
+
+    public function pausePullEndpoint(string $endpointId): PauseState
+    {
+        $data = $this->request('POST', "/v1/pull-endpoints/{$endpointId}/pause")['data'];
+        return new PauseState(id: $data['id'], paused: $data['paused']);
+    }
+
+    public function resumePullEndpoint(string $endpointId): PauseState
+    {
+        $data = $this->request('POST', "/v1/pull-endpoints/{$endpointId}/resume")['data'];
+        return new PauseState(id: $data['id'], paused: $data['paused']);
+    }
+
+    public function listPullEvents(
+        string $endpointId,
+        ?string $status = null,
+        ?string $eventType = null,
+        DateTimeImmutable|string|null $since = null,
+        DateTimeImmutable|string|null $before = null,
+        ?int $limit = null,
+        ?string $cursor = null,
+    ): ListPullEventsResponse {
+        $params = [];
+        if ($status !== null) {
+            $params['status'] = $status;
+        }
+        if ($eventType !== null) {
+            $params['event_type'] = $eventType;
+        }
+        if ($since !== null) {
+            $params['since'] = $since instanceof DateTimeImmutable ? $since->format('c') : $since;
+        }
+        if ($before !== null) {
+            $params['before'] = $before instanceof DateTimeImmutable ? $before->format('c') : $before;
+        }
+        if ($limit !== null) {
+            $params['limit'] = (string) $limit;
+        }
+        if ($cursor !== null) {
+            $params['cursor'] = $cursor;
+        }
+        $path = "/v1/pull-endpoints/{$endpointId}/events" . (!empty($params) ? '?' . http_build_query($params) : '');
+        $response = $this->request('GET', $path);
+
+        return new ListPullEventsResponse(
+            events: array_map(
+                static fn(array $event) => new PullEventSummary(
+                    id: $event['id'],
+                    status: $event['status'],
+                    sizeBytes: $event['size_bytes'],
+                    receivedAt: new DateTimeImmutable($event['received_at']),
+                    eventType: $event['event_type'] ?? null,
+                    fetchedAt: isset($event['fetched_at']) ? new DateTimeImmutable($event['fetched_at']) : null,
+                    deliveredAt: isset($event['delivered_at']) ? new DateTimeImmutable($event['delivered_at']) : null,
+                ),
+                $response['data']
+            ),
+            hasMore: $response['meta']['has_more'] ?? false,
+            nextCursor: ($response['meta']['next_cursor'] ?? '') !== '' ? ($response['meta']['next_cursor'] ?? null) : null,
+        );
+    }
+
+    public function getPullEvent(string $endpointId, string $eventId): PullEventDetail
+    {
+        $data = $this->request('GET', "/v1/pull-endpoints/{$endpointId}/events/{$eventId}")['data'];
+
+        return new PullEventDetail(
+            id: $data['id'],
+            status: $data['status'],
+            contentType: $data['content_type'],
+            payload: $data['payload'],
+            sizeBytes: $data['size_bytes'],
+            receivedAt: new DateTimeImmutable($data['received_at']),
+            eventType: $data['event_type'] ?? null,
+            headers: $data['headers'] ?? null,
+            fetchedAt: isset($data['fetched_at']) ? new DateTimeImmutable($data['fetched_at']) : null,
+            deliveredAt: isset($data['delivered_at']) ? new DateTimeImmutable($data['delivered_at']) : null,
+        );
+    }
+
+    public function ackPullEvents(string $endpointId, array $eventIds): AckPullEventsResponse
+    {
+        $data = $this->request('POST', "/v1/pull-endpoints/{$endpointId}/events/ack", [
+            'event_ids' => $eventIds,
+        ])['data'];
+
+        return new AckPullEventsResponse(acknowledged: $data['acknowledged']);
+    }
+
+    public function getPullLogs(
+        ?string $pullEndpointId = null,
+        ?string $status = null,
+        ?string $eventType = null,
+        DateTimeImmutable|string|null $startTime = null,
+        DateTimeImmutable|string|null $endTime = null,
+        ?int $limit = null,
+        ?string $cursor = null,
+    ): PullLogsResponse {
+        $params = [];
+        if ($pullEndpointId !== null) {
+            $params['pull_endpoint_id'] = $pullEndpointId;
+        }
+        if ($status !== null) {
+            $params['status'] = $status;
+        }
+        if ($eventType !== null) {
+            $params['event_type'] = $eventType;
+        }
+        if ($startTime !== null) {
+            $params['start_time'] = $startTime instanceof DateTimeImmutable ? $startTime->format('c') : $startTime;
+        }
+        if ($endTime !== null) {
+            $params['end_time'] = $endTime instanceof DateTimeImmutable ? $endTime->format('c') : $endTime;
+        }
+        if ($limit !== null) {
+            $params['limit'] = (string) $limit;
+        }
+        if ($cursor !== null) {
+            $params['cursor'] = $cursor;
+        }
+        $path = '/v1/pull-logs' . (!empty($params) ? '?' . http_build_query($params) : '');
+        $response = $this->request('GET', $path);
+
+        return new PullLogsResponse(
+            entries: array_map(
+                static fn(array $entry) => new PullLogEntry(
+                    eventId: $entry['event_id'],
+                    pullEndpointId: $entry['pull_endpoint_id'],
+                    status: $entry['status'],
+                    sizeBytes: $entry['size_bytes'],
+                    receivedAt: new DateTimeImmutable($entry['received_at']),
+                    endpointName: $entry['endpoint_name'] ?? null,
+                    eventType: $entry['event_type'] ?? null,
+                    fetchedAt: isset($entry['fetched_at']) ? new DateTimeImmutable($entry['fetched_at']) : null,
+                    deliveredAt: isset($entry['delivered_at']) ? new DateTimeImmutable($entry['delivered_at']) : null,
+                ),
+                $response['data']
+            ),
+            hasMore: $response['meta']['has_more'] ?? false,
+            nextCursor: $response['meta']['next_cursor'] ?? null,
+        );
+    }
+
+    public function getPullMetrics(string $window = '24h', ?string $pullEndpointId = null): Metrics
+    {
+        $params = ['window' => $window];
+        if ($pullEndpointId !== null) {
+            $params['pull_endpoint_id'] = $pullEndpointId;
+        }
+        $data = $this->request('GET', '/v1/pull-metrics?' . http_build_query($params))['data'];
+
+        return new Metrics(
+            window: $data['window'],
+            totalMessages: $data['total_messages'],
+            succeeded: $data['succeeded'],
+            failed: $data['failed'],
+            retries: $data['retries'],
+            successRate: $data['success_rate'],
+            avgLatencyMs: $data['avg_latency_ms'],
+        );
+    }
+
+    public function getPullTimeseriesMetrics(string $window = '24h', ?string $pullEndpointId = null): PullTimeSeriesMetrics
+    {
+        $params = ['window' => $window];
+        if ($pullEndpointId !== null) {
+            $params['pull_endpoint_id'] = $pullEndpointId;
+        }
+        $data = $this->request('GET', '/v1/pull-metrics/timeseries?' . http_build_query($params))['data'];
+
+        return new PullTimeSeriesMetrics(
+            window: $data['window'],
+            buckets: array_map(
+                static fn(array $bucket) => new PullTimeSeriesBucket(
+                    timestamp: new DateTimeImmutable($bucket['timestamp']),
+                    succeeded: $bucket['succeeded'],
+                    stored: $bucket['stored'],
+                    fetched: $bucket['fetched'],
+                    total: $bucket['total'],
+                ),
+                $data['buckets'] ?? [],
+            ),
+        );
+    }
+
     public function createCheckout(string $plan, string $interval): CheckoutSession
     {
         $data = $this->request('POST', '/v1/billing/checkout', ['plan' => $plan, 'interval' => $interval])['data'];
@@ -1526,6 +1842,45 @@ class HookBridge
             status: $data['status'],
             rateLimitDefault: $data['rate_limit_default'],
             createdAt: new DateTimeImmutable($data['created_at']),
+        );
+    }
+
+    private function parsePullEndpoint(array $data): PullEndpoint
+    {
+        $counts = isset($data['counts']) && is_array($data['counts'])
+            ? new PullEndpointCounts(
+                stored: $data['counts']['stored'] ?? null,
+                fetched: $data['counts']['fetched'] ?? null,
+                delivered: $data['counts']['delivered'] ?? null,
+                total: $data['counts']['total'] ?? null,
+            )
+            : null;
+
+        return new PullEndpoint(
+            id: $data['id'],
+            mode: $data['mode'] ?? 'pull',
+            ingestUrl: $data['ingest_url'],
+            active: $data['active'],
+            paused: $data['paused'],
+            createdAt: new DateTimeImmutable($data['created_at']),
+            updatedAt: new DateTimeImmutable($data['updated_at']),
+            name: $data['name'] ?? null,
+            description: $data['description'] ?? null,
+            retentionDays: $data['retention_days'] ?? null,
+            eventTypeSource: $data['event_type_source'] ?? null,
+            eventTypePath: $data['event_type_path'] ?? null,
+            counts: $counts,
+            verifyStaticToken: $data['verify_static_token'] ?? null,
+            tokenHeaderName: $data['token_header_name'] ?? null,
+            tokenQueryParam: $data['token_query_param'] ?? null,
+            verifyHmac: $data['verify_hmac'] ?? null,
+            hmacHeaderName: $data['hmac_header_name'] ?? null,
+            timestampHeaderName: $data['timestamp_header_name'] ?? null,
+            timestampTtlSeconds: $data['timestamp_ttl_seconds'] ?? null,
+            verifyIpAllowlist: $data['verify_ip_allowlist'] ?? null,
+            allowedCidrs: $data['allowed_cidrs'] ?? null,
+            ingestResponseCode: $data['ingest_response_code'] ?? null,
+            idempotencyHeaderNames: $data['idempotency_header_names'] ?? null,
         );
     }
 

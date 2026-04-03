@@ -243,6 +243,254 @@ final class SpecParityTest extends TestCase
         self::assertSame(6, $resumed->messagesRequeued);
     }
 
+    public function testPullEndpointAndEventSurface(): void
+    {
+        $history = [];
+        $client = $this->makeClientWithHistory([
+            $this->jsonResponse([
+                'data' => [
+                    'id' => '01935abc-def0-7123-4567-890abcdef066',
+                    'name' => 'Stripe Pull',
+                    'description' => 'Stores provider events for polling',
+                    'mode' => 'pull',
+                    'ingest_url' => 'https://ingest.hookbridge.io/pull/secret-token',
+                    'secret_token' => 'secret-token',
+                    'active' => true,
+                    'paused' => false,
+                    'retention_days' => 14,
+                    'event_type_source' => 'body',
+                    'event_type_path' => 'type',
+                    'verify_static_token' => true,
+                    'token_header_name' => 'X-Webhook-Token',
+                    'verify_hmac' => false,
+                    'verify_ip_allowlist' => false,
+                    'ingest_response_code' => 202,
+                    'idempotency_header_names' => ['X-Idempotency-Key'],
+                    'created_at' => '2025-12-06T12:00:00Z',
+                    'updated_at' => '2025-12-06T12:00:00Z',
+                ],
+                'meta' => ['request_id' => 'req-12345'],
+            ], 201),
+            $this->jsonResponse([
+                'data' => [[
+                    'id' => '01935abc-def0-7123-4567-890abcdef066',
+                    'name' => 'Stripe Pull',
+                    'active' => true,
+                    'paused' => false,
+                    'ingest_url' => 'https://ingest.hookbridge.io/pull',
+                    'created_at' => '2025-12-06T12:00:00Z',
+                ]],
+                'meta' => ['request_id' => 'req-12345', 'next_cursor' => null],
+            ]),
+            $this->jsonResponse([
+                'data' => [
+                    'id' => '01935abc-def0-7123-4567-890abcdef066',
+                    'name' => 'Stripe Pull',
+                    'description' => 'Stores provider events for polling',
+                    'mode' => 'pull',
+                    'ingest_url' => 'https://ingest.hookbridge.io/pull',
+                    'active' => true,
+                    'paused' => false,
+                    'retention_days' => 14,
+                    'event_type_source' => 'body',
+                    'event_type_path' => 'type',
+                    'counts' => ['stored' => 1, 'fetched' => 0, 'delivered' => 0, 'total' => 1],
+                    'verify_static_token' => true,
+                    'token_header_name' => 'X-Webhook-Token',
+                    'verify_hmac' => false,
+                    'verify_ip_allowlist' => false,
+                    'ingest_response_code' => 202,
+                    'idempotency_header_names' => ['X-Idempotency-Key'],
+                    'created_at' => '2025-12-06T12:00:00Z',
+                    'updated_at' => '2025-12-06T12:05:00Z',
+                ],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => [
+                    'id' => '01935abc-def0-7123-4567-890abcdef066',
+                    'name' => 'Stripe Pull Renamed',
+                    'description' => 'Stores provider events for polling',
+                    'mode' => 'pull',
+                    'ingest_url' => 'https://ingest.hookbridge.io/pull',
+                    'active' => true,
+                    'paused' => false,
+                    'retention_days' => 21,
+                    'event_type_source' => 'body',
+                    'event_type_path' => 'type',
+                    'counts' => ['stored' => 1, 'fetched' => 0, 'delivered' => 0, 'total' => 1],
+                    'verify_static_token' => true,
+                    'token_header_name' => 'X-Webhook-Token',
+                    'verify_hmac' => false,
+                    'verify_ip_allowlist' => false,
+                    'ingest_response_code' => 202,
+                    'idempotency_header_names' => ['X-Idempotency-Key'],
+                    'created_at' => '2025-12-06T12:00:00Z',
+                    'updated_at' => '2025-12-06T12:10:00Z',
+                ],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => ['id' => '01935abc-def0-7123-4567-890abcdef066', 'paused' => true],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => ['id' => '01935abc-def0-7123-4567-890abcdef066', 'paused' => false],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => [[
+                    'id' => '01935abc-def0-7123-4567-890abcdef067',
+                    'event_type' => 'payment_intent.succeeded',
+                    'status' => 'stored',
+                    'size_bytes' => 256,
+                    'received_at' => '2025-12-06T12:01:00Z',
+                    'fetched_at' => null,
+                    'delivered_at' => null,
+                ]],
+                'meta' => ['request_id' => 'req-12345', 'has_more' => false, 'next_cursor' => ''],
+            ]),
+            $this->jsonResponse([
+                'data' => [
+                    'id' => '01935abc-def0-7123-4567-890abcdef067',
+                    'event_type' => 'payment_intent.succeeded',
+                    'status' => 'fetched',
+                    'content_type' => 'application/json',
+                    'payload' => ['type' => 'payment_intent.succeeded', 'id' => 'evt_123'],
+                    'headers' => ['content-type' => 'application/json'],
+                    'size_bytes' => 256,
+                    'received_at' => '2025-12-06T12:01:00Z',
+                    'fetched_at' => '2025-12-06T12:01:30Z',
+                    'delivered_at' => null,
+                ],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => ['acknowledged' => 1],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => ['id' => '01935abc-def0-7123-4567-890abcdef066', 'deleted' => true],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+        ], $history);
+
+        $created = $client->createPullEndpoint(
+            name: 'Stripe Pull',
+            description: 'Stores provider events for polling',
+            retentionDays: 14,
+            eventTypeSource: 'body',
+            eventTypePath: 'type',
+            verifyStaticToken: true,
+            tokenHeaderName: 'X-Webhook-Token',
+            tokenValue: 'secret-token-value',
+            idempotencyHeaderNames: ['X-Idempotency-Key'],
+            ingestResponseCode: 202,
+        );
+        $listed = $client->listPullEndpoints(limit: 10);
+        $fetched = $client->getPullEndpoint('01935abc-def0-7123-4567-890abcdef066');
+        $updated = $client->updatePullEndpoint('01935abc-def0-7123-4567-890abcdef066', [
+            'name' => 'Stripe Pull Renamed',
+            'retention_days' => 21,
+        ]);
+        $paused = $client->pausePullEndpoint('01935abc-def0-7123-4567-890abcdef066');
+        $resumed = $client->resumePullEndpoint('01935abc-def0-7123-4567-890abcdef066');
+        $events = $client->listPullEvents('01935abc-def0-7123-4567-890abcdef066', 'stored', 'payment_intent.succeeded', limit: 5);
+        $event = $client->getPullEvent('01935abc-def0-7123-4567-890abcdef066', '01935abc-def0-7123-4567-890abcdef067');
+        $acked = $client->ackPullEvents('01935abc-def0-7123-4567-890abcdef066', ['01935abc-def0-7123-4567-890abcdef067']);
+        $deleted = $client->deletePullEndpoint('01935abc-def0-7123-4567-890abcdef066');
+
+        self::assertSame('secret-token', $created->secretToken);
+        self::assertSame('01935abc-def0-7123-4567-890abcdef066', $listed->endpoints[0]->id);
+        self::assertSame(1, $fetched->counts?->stored);
+        self::assertSame(0, $fetched->counts?->fetched);
+        self::assertSame('Stripe Pull Renamed', $updated->name);
+        self::assertTrue($paused->paused);
+        self::assertFalse($resumed->paused);
+        self::assertSame('payment_intent.succeeded', $events->events[0]->eventType);
+        self::assertNull($events->events[0]->fetchedAt);
+        self::assertSame('application/json', $event->contentType);
+        self::assertSame('fetched', $event->status);
+        self::assertSame('2025-12-06T12:01:30+00:00', $event->fetchedAt?->format('c'));
+        self::assertSame(1, $acked->acknowledged);
+        self::assertTrue($deleted->deleted);
+
+        $this->assertRequest($history, 0, 'POST', '/v1/pull-endpoints', [], [
+            'name' => 'Stripe Pull',
+            'description' => 'Stores provider events for polling',
+            'retention_days' => 14,
+            'event_type_source' => 'body',
+            'event_type_path' => 'type',
+            'verify_static_token' => true,
+            'token_header_name' => 'X-Webhook-Token',
+            'token_value' => 'secret-token-value',
+            'idempotency_header_names' => ['X-Idempotency-Key'],
+            'ingest_response_code' => 202,
+        ]);
+        $this->assertRequest($history, 3, 'PATCH', '/v1/pull-endpoints/01935abc-def0-7123-4567-890abcdef066', [], [
+            'name' => 'Stripe Pull Renamed',
+            'retention_days' => 21,
+        ]);
+        $this->assertRequest($history, 8, 'POST', '/v1/pull-endpoints/01935abc-def0-7123-4567-890abcdef066/events/ack', [], [
+            'event_ids' => ['01935abc-def0-7123-4567-890abcdef067'],
+        ]);
+    }
+
+    public function testPullObservabilitySurface(): void
+    {
+        $client = $this->makeClient([
+            $this->jsonResponse([
+                'data' => [[
+                    'event_id' => '01935abc-def0-7123-4567-890abcdef067',
+                    'pull_endpoint_id' => '01935abc-def0-7123-4567-890abcdef066',
+                    'endpoint_name' => 'Stripe Pull',
+                    'event_type' => 'payment_intent.succeeded',
+                    'status' => 'fetched',
+                    'size_bytes' => 256,
+                    'received_at' => '2025-12-06T12:01:00Z',
+                    'fetched_at' => '2025-12-06T12:01:30Z',
+                    'delivered_at' => null,
+                ]],
+                'meta' => ['request_id' => 'req-12345', 'has_more' => false, 'next_cursor' => ''],
+            ]),
+            $this->jsonResponse([
+                'data' => [
+                    'window' => '24h',
+                    'total_messages' => 10,
+                    'succeeded' => 4,
+                    'failed' => 0,
+                    'retries' => 0,
+                    'success_rate' => 0.4,
+                    'avg_latency_ms' => 15,
+                ],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+            $this->jsonResponse([
+                'data' => [
+                    'window' => '24h',
+                    'buckets' => [[
+                        'timestamp' => '2025-12-06T12:00:00Z',
+                        'succeeded' => 4,
+                        'stored' => 4,
+                        'fetched' => 2,
+                        'total' => 10,
+                    ]],
+                ],
+                'meta' => ['request_id' => 'req-12345'],
+            ]),
+        ]);
+
+        $logs = $client->getPullLogs('01935abc-def0-7123-4567-890abcdef066', 'delivered', 'payment_intent.succeeded', limit: 10);
+        $metrics = $client->getPullMetrics(pullEndpointId: '01935abc-def0-7123-4567-890abcdef066');
+        $timeseries = $client->getPullTimeseriesMetrics(pullEndpointId: '01935abc-def0-7123-4567-890abcdef066');
+
+        self::assertSame('01935abc-def0-7123-4567-890abcdef066', $logs->entries[0]->pullEndpointId);
+        self::assertSame('2025-12-06T12:01:30+00:00', $logs->entries[0]->fetchedAt?->format('c'));
+        self::assertSame(10, $metrics->totalMessages);
+        self::assertSame(2, $timeseries->buckets[0]->fetched);
+        self::assertSame(10, $timeseries->buckets[0]->total);
+    }
+
     public function testInboundObservabilitySurface(): void
     {
         $client = $this->makeClient([
