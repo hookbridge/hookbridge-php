@@ -205,6 +205,9 @@ readonly class CreateInboundEndpointResponse
         public string $ingestUrl,
         public string $secretToken,
         public DateTimeImmutable $createdAt,
+        public ?string $signingKeyId = null,
+        public ?string $signingSecret = null,
+        public ?string $keyHint = null,
     ) {}
 }
 
@@ -394,6 +397,16 @@ readonly class ListPullEndpointsResponse
     ) {}
 }
 
+readonly class PullTimingBreakdown
+{
+    public function __construct(
+        public ?int $ingestProcessingMs = null,
+        public ?int $timeToFetchMs = null,
+        public ?int $timeToAckMs = null,
+        public ?int $totalLifecycleMs = null,
+    ) {}
+}
+
 readonly class PullEventSummary
 {
     public function __construct(
@@ -404,6 +417,7 @@ readonly class PullEventSummary
         public ?string $eventType = null,
         public ?DateTimeImmutable $fetchedAt = null,
         public ?DateTimeImmutable $deliveredAt = null,
+        public ?PullTimingBreakdown $timing = null,
     ) {}
 }
 
@@ -420,6 +434,7 @@ readonly class PullEventDetail
         public ?array $headers = null,
         public ?DateTimeImmutable $fetchedAt = null,
         public ?DateTimeImmutable $deliveredAt = null,
+        public ?PullTimingBreakdown $timing = null,
     ) {}
 }
 
@@ -451,6 +466,7 @@ readonly class PullLogEntry
         public ?string $eventType = null,
         public ?DateTimeImmutable $fetchedAt = null,
         public ?DateTimeImmutable $deliveredAt = null,
+        public ?PullTimingBreakdown $timing = null,
     ) {}
 }
 
@@ -603,5 +619,103 @@ readonly class ExportRecord
         public ?DateTimeImmutable $startedAt = null,
         public ?DateTimeImmutable $completedAt = null,
         public ?DateTimeImmutable $expiresAt = null,
+    ) {}
+}
+
+readonly class DeleteMessageResult
+{
+    public function __construct(
+        public string $messageId,
+        public DateTimeImmutable $deletedAt,
+        public bool $alreadyDeleted,
+    ) {}
+}
+
+readonly class DeleteEventResult
+{
+    public function __construct(
+        public string $eventId,
+        public DateTimeImmutable $deletedAt,
+        public bool $alreadyDeleted,
+    ) {}
+}
+
+readonly class DeleteBatchItemResult
+{
+    public function __construct(
+        public string $messageId,
+        public string $outcome,
+        public ?DateTimeImmutable $deletedAt = null,
+    ) {}
+}
+
+readonly class DeleteBatchResult
+{
+    /** @param list<DeleteBatchItemResult> $results */
+    public function __construct(
+        public array $results,
+        public int $deletedCount,
+        public int $alreadyDeletedCount,
+        public int $notFoundCount,
+    ) {}
+}
+
+readonly class DeleteEventBatchItemResult
+{
+    public function __construct(
+        public string $eventId,
+        public string $outcome,
+        public ?DateTimeImmutable $deletedAt = null,
+    ) {}
+}
+
+readonly class DeleteEventBatchResult
+{
+    /** @param list<DeleteEventBatchItemResult> $results */
+    public function __construct(
+        public array $results,
+        public int $deletedCount,
+        public int $alreadyDeletedCount,
+        public int $notFoundCount,
+    ) {}
+}
+
+readonly class DeletePartialError
+{
+    public function __construct(
+        public string $code,
+        public string $message,
+    ) {}
+}
+
+readonly class DeleteAllResult
+{
+    /** @param list<string> $deletedMessageIds */
+    public function __construct(
+        public int $deleted,
+        public array $deletedMessageIds,
+        public ?DeletePartialError $error = null,
+    ) {}
+}
+
+readonly class DeletePullEventsAllResult
+{
+    /** @param list<string> $deletedEventIds */
+    public function __construct(
+        public int $deleted,
+        public array $deletedEventIds,
+        public ?DeletePartialError $error = null,
+    ) {}
+}
+
+readonly class ActorLookupResult
+{
+    /**
+     * @param array<string, array{email: string}>|null $users
+     * @param array<string, array{label: string}>|null $apiKeys
+     */
+    public function __construct(
+        public ?array $users = null,
+        public ?array $apiKeys = null,
     ) {}
 }

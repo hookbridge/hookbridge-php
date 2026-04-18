@@ -1047,4 +1047,100 @@ final class SpecParityTest extends TestCase
         ]);
         $this->assertRequest($managementHistory, 9, 'DELETE', '/v1/inbound-endpoints/01935abc-def0-7123-4567-890abcdef099');
     }
+
+    public function testDeleteMessagesAndActors(): void
+    {
+        $managementHistory = [];
+        $responses = [
+            new Response(200, [], json_encode([
+                'data' => [
+                    'message_id' => 'm_1',
+                    'deleted_at' => '2026-04-05T14:23:11.123Z',
+                    'already_deleted' => false,
+                ],
+                'meta' => ['request_id' => 'req-del-1'],
+            ])),
+            new Response(200, [], json_encode([
+                'data' => [
+                    'results' => [
+                        ['message_id' => 'm_1', 'outcome' => 'deleted', 'deleted_at' => '2026-04-05T14:23:11.123Z'],
+                        ['message_id' => 'm_missing', 'outcome' => 'not_found'],
+                    ],
+                    'deleted_count' => 1,
+                    'already_deleted_count' => 0,
+                    'not_found_count' => 1,
+                ],
+                'meta' => ['request_id' => 'req-del-2'],
+            ])),
+            new Response(200, [], json_encode([
+                'data' => ['deleted' => 2, 'deleted_message_ids' => ['m_1', 'm_2']],
+                'meta' => ['request_id' => 'req-del-3'],
+            ])),
+            new Response(200, [], json_encode([
+                'data' => [
+                    'event_id' => 'ev_1',
+                    'deleted_at' => '2026-04-05T14:23:11.123Z',
+                    'already_deleted' => false,
+                ],
+                'meta' => ['request_id' => 'req-del-4'],
+            ])),
+            new Response(200, [], json_encode([
+                'data' => [
+                    'results' => [
+                        ['event_id' => 'ev_1', 'outcome' => 'deleted', 'deleted_at' => '2026-04-05T14:23:11.123Z'],
+                    ],
+                    'deleted_count' => 1,
+                    'already_deleted_count' => 0,
+                    'not_found_count' => 0,
+                ],
+                'meta' => ['request_id' => 'req-del-5'],
+            ])),
+            new Response(200, [], json_encode([
+                'data' => ['deleted' => 3, 'deleted_event_ids' => ['ev_1', 'ev_2', 'ev_3']],
+                'meta' => ['request_id' => 'req-del-6'],
+            ])),
+            new Response(200, [], json_encode([
+                'data' => [
+                    'users' => ['user_1' => ['email' => 'alice@example.com']],
+                    'api_keys' => ['key_1' => ['label' => 'Production']],
+                ],
+                'meta' => ['request_id' => 'req-actors'],
+            ])),
+        ];
+        $client = $this->makeClientWithHistory($responses, $managementHistory);
+
+        $single = $client->deleteMessage('m_1');
+        $this->assertSame('m_1', $single->messageId);
+        $this->assertFalse($single->alreadyDeleted);
+
+        $batch = $client->deleteMessagesBatch(['m_1', 'm_missing']);
+        $this->assertSame(1, $batch->deletedCount);
+        $this->assertSame(1, $batch->notFoundCount);
+        $this->assertSame('deleted', $batch->results[0]->outcome);
+
+        $all = $client->deleteMessagesAll(status: 'succeeded', limit: 500);
+        $this->assertSame(2, $all->deleted);
+        $this->assertSame(['m_1', 'm_2'], $all->deletedMessageIds);
+
+        $pullSingle = $client->deletePullEvent('pe_1', 'ev_1');
+        $this->assertSame('ev_1', $pullSingle->eventId);
+
+        $pullBatch = $client->deletePullEventsBatch('pe_1', ['ev_1']);
+        $this->assertSame(1, $pullBatch->deletedCount);
+
+        $pullAll = $client->deletePullEventsAll('pe_1', eventType: 'user.created');
+        $this->assertSame(3, $pullAll->deleted);
+
+        $actors = $client->lookupActors(userIds: ['user_1'], apiKeyIds: ['key_1']);
+        $this->assertSame('alice@example.com', $actors->users['user_1']['email']);
+        $this->assertSame('Production', $actors->apiKeys['key_1']['label']);
+
+        $this->assertRequest($managementHistory, 0, 'DELETE', '/v1/messages/m_1');
+        $this->assertRequest($managementHistory, 1, 'POST', '/v1/messages/delete-batch', [], ['message_ids' => ['m_1', 'm_missing']]);
+        $this->assertRequest($managementHistory, 2, 'POST', '/v1/messages/delete-all', ['status' => 'succeeded', 'limit' => '500']);
+        $this->assertRequest($managementHistory, 3, 'DELETE', '/v1/pull-endpoints/pe_1/events/ev_1');
+        $this->assertRequest($managementHistory, 4, 'POST', '/v1/pull-endpoints/pe_1/events/delete-batch', [], ['message_ids' => ['ev_1']]);
+        $this->assertRequest($managementHistory, 5, 'POST', '/v1/pull-endpoints/pe_1/events/delete-all', ['event_type' => 'user.created']);
+        $this->assertRequest($managementHistory, 6, 'GET', '/v1/actors/lookup', ['user_id' => 'user_1', 'api_key_id' => 'key_1']);
+    }
 }

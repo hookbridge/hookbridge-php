@@ -43,6 +43,16 @@ use HookBridge\Response\SubscriptionUsage;
 use HookBridge\Response\SendResponse;
 use HookBridge\Response\CheckoutSession;
 use HookBridge\Response\CreateInboundEndpointResponse as InboundEndpointCreatedResponse;
+use HookBridge\Response\ActorLookupResult;
+use HookBridge\Response\DeleteAllResult;
+use HookBridge\Response\DeleteBatchItemResult;
+use HookBridge\Response\DeleteBatchResult;
+use HookBridge\Response\DeleteEventBatchItemResult;
+use HookBridge\Response\DeleteEventBatchResult;
+use HookBridge\Response\DeleteEventResult;
+use HookBridge\Response\DeleteMessageResult;
+use HookBridge\Response\DeletePartialError;
+use HookBridge\Response\DeletePullEventsAllResult;
 use HookBridge\Response\DeleteResult;
 use HookBridge\Response\ExportRecord;
 use HookBridge\Response\InboundEndpoint;
@@ -68,6 +78,7 @@ use HookBridge\Response\ListPullEventsResponse;
 use HookBridge\Response\AckPullEventsResponse;
 use HookBridge\Response\PullLogEntry;
 use HookBridge\Response\PullLogsResponse;
+use HookBridge\Response\PullTimingBreakdown;
 use HookBridge\Response\PullTimeSeriesBucket;
 use HookBridge\Response\PullTimeSeriesMetrics;
 use HookBridge\Response\TimeSeriesBucket;
@@ -96,7 +107,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    private const USER_AGENT = 'hookbridge-php/1.7.0';
+    private const USER_AGENT = 'hookbridge-php/1.8.0';
 
     private Client $client;
     private Client $sendClient;
@@ -1007,6 +1018,12 @@ class HookBridge
                     eventType: $event['event_type'] ?? null,
                     fetchedAt: isset($event['fetched_at']) ? new DateTimeImmutable($event['fetched_at']) : null,
                     deliveredAt: isset($event['delivered_at']) ? new DateTimeImmutable($event['delivered_at']) : null,
+                    timing: isset($event['timing']) ? new PullTimingBreakdown(
+                        ingestProcessingMs: $event['timing']['ingest_processing_ms'] ?? null,
+                        timeToFetchMs: $event['timing']['time_to_fetch_ms'] ?? null,
+                        timeToAckMs: $event['timing']['time_to_ack_ms'] ?? null,
+                        totalLifecycleMs: $event['timing']['total_lifecycle_ms'] ?? null,
+                    ) : null,
                 ),
                 $response['data']
             ),
@@ -1015,9 +1032,13 @@ class HookBridge
         );
     }
 
-    public function getPullEvent(string $endpointId, string $eventId): PullEventDetail
+    public function getPullEvent(string $endpointId, string $eventId, bool $preview = false): PullEventDetail
     {
-        $data = $this->request('GET', "/v1/pull-endpoints/{$endpointId}/events/{$eventId}")['data'];
+        $path = "/v1/pull-endpoints/{$endpointId}/events/{$eventId}";
+        if ($preview) {
+            $path .= '?preview=true';
+        }
+        $data = $this->request('GET', $path)['data'];
 
         return new PullEventDetail(
             id: $data['id'],
@@ -1030,6 +1051,12 @@ class HookBridge
             headers: $data['headers'] ?? null,
             fetchedAt: isset($data['fetched_at']) ? new DateTimeImmutable($data['fetched_at']) : null,
             deliveredAt: isset($data['delivered_at']) ? new DateTimeImmutable($data['delivered_at']) : null,
+            timing: isset($data['timing']) ? new PullTimingBreakdown(
+                ingestProcessingMs: $data['timing']['ingest_processing_ms'] ?? null,
+                timeToFetchMs: $data['timing']['time_to_fetch_ms'] ?? null,
+                timeToAckMs: $data['timing']['time_to_ack_ms'] ?? null,
+                totalLifecycleMs: $data['timing']['total_lifecycle_ms'] ?? null,
+            ) : null,
         );
     }
 
@@ -1088,6 +1115,12 @@ class HookBridge
                     eventType: $entry['event_type'] ?? null,
                     fetchedAt: isset($entry['fetched_at']) ? new DateTimeImmutable($entry['fetched_at']) : null,
                     deliveredAt: isset($entry['delivered_at']) ? new DateTimeImmutable($entry['delivered_at']) : null,
+                    timing: isset($entry['timing']) ? new PullTimingBreakdown(
+                        ingestProcessingMs: $entry['timing']['ingest_processing_ms'] ?? null,
+                        timeToFetchMs: $entry['timing']['time_to_fetch_ms'] ?? null,
+                        timeToAckMs: $entry['timing']['time_to_ack_ms'] ?? null,
+                        totalLifecycleMs: $entry['timing']['total_lifecycle_ms'] ?? null,
+                    ) : null,
                 ),
                 $response['data']
             ),
@@ -1297,6 +1330,9 @@ class HookBridge
             ingestUrl: $data['ingest_url'],
             secretToken: $data['secret_token'],
             createdAt: new DateTimeImmutable($data['created_at']),
+            signingKeyId: $data['signing_key_id'] ?? null,
+            signingSecret: $data['signing_secret'] ?? null,
+            keyHint: $data['key_hint'] ?? null,
         );
     }
 
@@ -1375,6 +1411,34 @@ class HookBridge
     {
         $data = $this->request('POST', "/v1/inbound-endpoints/{$endpointId}/resume")['data'];
         return new PauseState(id: $data['id'], paused: $data['paused']);
+    }
+
+    public function createInboundSigningKey(string $endpointId): RotateSecretResponse
+    {
+        $response = $this->request('POST', "/v1/inbound-endpoints/{$endpointId}/signing-keys");
+        $data = $response['data'];
+        return new RotateSecretResponse(
+            id: $data['id'],
+            signingSecret: $data['signing_secret'],
+        );
+    }
+
+    public function listInboundSigningKeys(string $endpointId): array
+    {
+        $response = $this->request('GET', "/v1/inbound-endpoints/{$endpointId}/signing-keys");
+        return array_map(
+            fn(array $key) => new SigningKey(
+                id: $key['id'],
+                keyHint: $key['key_hint'],
+                createdAt: new DateTimeImmutable($key['created_at']),
+            ),
+            $response['data']
+        );
+    }
+
+    public function deleteInboundSigningKey(string $endpointId, string $keyId): void
+    {
+        $this->request('DELETE', "/v1/inbound-endpoints/{$endpointId}/signing-keys/{$keyId}");
     }
 
     public function listenInboundEndpoint(string $endpointId, ?string $after = null): ListenInboundEndpointResponse
@@ -1620,6 +1684,213 @@ class HookBridge
     public function deleteExport(string $exportId): void
     {
         $this->request('DELETE', "/v1/exports/{$exportId}");
+    }
+
+    public function deleteMessage(string $messageId): DeleteMessageResult
+    {
+        $data = $this->request('DELETE', "/v1/messages/{$messageId}")['data'];
+        return new DeleteMessageResult(
+            messageId: $data['message_id'],
+            deletedAt: new DateTimeImmutable($data['deleted_at']),
+            alreadyDeleted: $data['already_deleted'],
+        );
+    }
+
+    /** @param list<string> $messageIds */
+    public function deleteMessagesBatch(array $messageIds): DeleteBatchResult
+    {
+        $data = $this->request('POST', '/v1/messages/delete-batch', ['message_ids' => $messageIds])['data'];
+        return $this->parseDeleteBatch($data);
+    }
+
+    public function deleteMessagesAll(
+        ?string $status = null,
+        ?string $endpointId = null,
+        DateTimeImmutable|string|null $createdAfter = null,
+        DateTimeImmutable|string|null $createdBefore = null,
+        ?int $limit = null,
+    ): DeleteAllResult {
+        $query = [];
+        if ($status !== null) {
+            $query['status'] = $status;
+        }
+        if ($endpointId !== null) {
+            $query['endpoint_id'] = $endpointId;
+        }
+        if ($createdAfter !== null) {
+            $query['created_after'] = $createdAfter instanceof DateTimeImmutable ? $createdAfter->format('c') : $createdAfter;
+        }
+        if ($createdBefore !== null) {
+            $query['created_before'] = $createdBefore instanceof DateTimeImmutable ? $createdBefore->format('c') : $createdBefore;
+        }
+        if ($limit !== null) {
+            $query['limit'] = (string) $limit;
+        }
+        $path = '/v1/messages/delete-all' . ($query ? '?' . http_build_query($query) : '');
+        return $this->parseDeleteAll($this->request('POST', $path));
+    }
+
+    public function deleteInboundMessage(string $messageId): DeleteMessageResult
+    {
+        $data = $this->request('DELETE', "/v1/inbound-messages/{$messageId}")['data'];
+        return new DeleteMessageResult(
+            messageId: $data['message_id'],
+            deletedAt: new DateTimeImmutable($data['deleted_at']),
+            alreadyDeleted: $data['already_deleted'],
+        );
+    }
+
+    /** @param list<string> $messageIds */
+    public function deleteInboundMessagesBatch(array $messageIds): DeleteBatchResult
+    {
+        $data = $this->request('POST', '/v1/inbound-messages/delete-batch', ['message_ids' => $messageIds])['data'];
+        return $this->parseDeleteBatch($data);
+    }
+
+    public function deleteInboundMessagesAll(
+        ?string $status = null,
+        ?string $inboundEndpointId = null,
+        DateTimeImmutable|string|null $receivedAfter = null,
+        DateTimeImmutable|string|null $receivedBefore = null,
+        ?int $limit = null,
+    ): DeleteAllResult {
+        $query = [];
+        if ($status !== null) {
+            $query['status'] = $status;
+        }
+        if ($inboundEndpointId !== null) {
+            $query['inbound_endpoint_id'] = $inboundEndpointId;
+        }
+        if ($receivedAfter !== null) {
+            $query['received_after'] = $receivedAfter instanceof DateTimeImmutable ? $receivedAfter->format('c') : $receivedAfter;
+        }
+        if ($receivedBefore !== null) {
+            $query['received_before'] = $receivedBefore instanceof DateTimeImmutable ? $receivedBefore->format('c') : $receivedBefore;
+        }
+        if ($limit !== null) {
+            $query['limit'] = (string) $limit;
+        }
+        $path = '/v1/inbound-messages/delete-all' . ($query ? '?' . http_build_query($query) : '');
+        return $this->parseDeleteAll($this->request('POST', $path));
+    }
+
+    public function deletePullEvent(string $endpointId, string $eventId): DeleteEventResult
+    {
+        $data = $this->request('DELETE', "/v1/pull-endpoints/{$endpointId}/events/{$eventId}")['data'];
+        return new DeleteEventResult(
+            eventId: $data['event_id'],
+            deletedAt: new DateTimeImmutable($data['deleted_at']),
+            alreadyDeleted: $data['already_deleted'],
+        );
+    }
+
+    /** @param list<string> $eventIds */
+    public function deletePullEventsBatch(string $endpointId, array $eventIds): DeleteEventBatchResult
+    {
+        $data = $this->request(
+            'POST',
+            "/v1/pull-endpoints/{$endpointId}/events/delete-batch",
+            ['message_ids' => $eventIds]
+        )['data'];
+        return new DeleteEventBatchResult(
+            results: array_map(
+                fn(array $item) => new DeleteEventBatchItemResult(
+                    eventId: $item['event_id'],
+                    outcome: $item['outcome'],
+                    deletedAt: isset($item['deleted_at']) ? new DateTimeImmutable($item['deleted_at']) : null,
+                ),
+                $data['results']
+            ),
+            deletedCount: $data['deleted_count'],
+            alreadyDeletedCount: $data['already_deleted_count'],
+            notFoundCount: $data['not_found_count'],
+        );
+    }
+
+    public function deletePullEventsAll(
+        string $endpointId,
+        ?string $status = null,
+        ?string $eventType = null,
+        DateTimeImmutable|string|null $receivedAfter = null,
+        DateTimeImmutable|string|null $receivedBefore = null,
+        ?int $limit = null,
+    ): DeletePullEventsAllResult {
+        $query = [];
+        if ($status !== null) {
+            $query['status'] = $status;
+        }
+        if ($eventType !== null) {
+            $query['event_type'] = $eventType;
+        }
+        if ($receivedAfter !== null) {
+            $query['received_after'] = $receivedAfter instanceof DateTimeImmutable ? $receivedAfter->format('c') : $receivedAfter;
+        }
+        if ($receivedBefore !== null) {
+            $query['received_before'] = $receivedBefore instanceof DateTimeImmutable ? $receivedBefore->format('c') : $receivedBefore;
+        }
+        if ($limit !== null) {
+            $query['limit'] = (string) $limit;
+        }
+        $path = "/v1/pull-endpoints/{$endpointId}/events/delete-all" . ($query ? '?' . http_build_query($query) : '');
+        $response = $this->request('POST', $path);
+        $data = $response['data'];
+        $error = $response['error'] ?? null;
+        return new DeletePullEventsAllResult(
+            deleted: $data['deleted'],
+            deletedEventIds: $data['deleted_event_ids'] ?? [],
+            error: $error ? new DeletePartialError(code: $error['code'], message: $error['message']) : null,
+        );
+    }
+
+    /**
+     * @param list<string>|null $userIds
+     * @param list<string>|null $apiKeyIds
+     */
+    public function lookupActors(?array $userIds = null, ?array $apiKeyIds = null): ActorLookupResult
+    {
+        $query = [];
+        if ($userIds !== null && count($userIds) > 0) {
+            $query['user_id'] = implode(',', $userIds);
+        }
+        if ($apiKeyIds !== null && count($apiKeyIds) > 0) {
+            $query['api_key_id'] = implode(',', $apiKeyIds);
+        }
+        $path = '/v1/actors/lookup' . ($query ? '?' . http_build_query($query) : '');
+        $data = $this->request('GET', $path)['data'];
+        return new ActorLookupResult(
+            users: $data['users'] ?? null,
+            apiKeys: $data['api_keys'] ?? null,
+        );
+    }
+
+    /** @param array<string, mixed> $data */
+    private function parseDeleteBatch(array $data): DeleteBatchResult
+    {
+        return new DeleteBatchResult(
+            results: array_map(
+                fn(array $item) => new DeleteBatchItemResult(
+                    messageId: $item['message_id'],
+                    outcome: $item['outcome'],
+                    deletedAt: isset($item['deleted_at']) ? new DateTimeImmutable($item['deleted_at']) : null,
+                ),
+                $data['results']
+            ),
+            deletedCount: $data['deleted_count'],
+            alreadyDeletedCount: $data['already_deleted_count'],
+            notFoundCount: $data['not_found_count'],
+        );
+    }
+
+    /** @param array<string, mixed> $response */
+    private function parseDeleteAll(array $response): DeleteAllResult
+    {
+        $data = $response['data'];
+        $error = $response['error'] ?? null;
+        return new DeleteAllResult(
+            deleted: $data['deleted'],
+            deletedMessageIds: $data['deleted_message_ids'] ?? [],
+            error: $error ? new DeletePartialError(code: $error['code'], message: $error['message']) : null,
+        );
     }
 
     public function downloadExport(string $exportId): string
