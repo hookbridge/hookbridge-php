@@ -115,16 +115,10 @@ final class SpecParityTest extends TestCase
         $client = $this->makeClient([
             $this->jsonResponse(['data' => ['replayed' => 2, 'failed' => 1, 'stuck' => 0, 'replayed_message_ids' => ['01935abc-def0-7123-4567-890abcdef013'], 'stuck_message_ids' => []]]),
             $this->jsonResponse(['data' => ['replayed' => 1, 'failed' => 1, 'stuck' => 0, 'results' => [['message_id' => '01935abc-def0-7123-4567-890abcdef013', 'status' => 'replayed'], ['message_id' => '01935abc-def0-7123-4567-890abcdef014', 'status' => 'failed', 'error' => 'message not replayable']]]]),
-            $this->jsonResponse(['data' => [['id' => '01935abc-def0-7123-4567-890abcdef012', 'tenant_id' => 'tenant_abc123', 'name' => 'Production Webhooks', 'status' => 'active', 'rate_limit_default' => 1000, 'created_at' => '2025-12-01T10:00:00Z']]]),
-            $this->jsonResponse(['data' => ['id' => '01935abc-def0-7123-4567-890abcdef012', 'tenant_id' => 'tenant_abc123', 'name' => 'Production Webhooks', 'status' => 'active', 'rate_limit_default' => 1000, 'created_at' => '2025-12-01T10:00:00Z']]),
-            $this->jsonResponse(['data' => ['id' => '01935abc-def0-7123-4567-890abcdef012', 'tenant_id' => 'tenant_abc123', 'name' => 'Renamed Project', 'status' => 'active', 'rate_limit_default' => 2000, 'created_at' => '2025-12-01T10:00:00Z']]),
-            $this->jsonResponse(['data' => ['deleted' => true]]),
             $this->jsonResponse(['data' => ['id' => 'sk_550e8400e29b41d4a716446655440001', 'signing_secret' => 'whsec_new_secret_12345', 'key_hint' => '1234', 'created_at' => '2025-01-01T00:00:00Z']]),
             $this->jsonResponse(['data' => [['id' => 'sk_550e8400e29b41d4a716446655440001', 'key_hint' => '1234', 'created_at' => '2025-01-01T00:00:00Z']]]),
             new Response(204),
             $this->jsonResponse(['data' => ['window' => '24h', 'buckets' => [['timestamp' => '2025-12-06T00:00:00Z', 'succeeded' => 10, 'failed' => 1, 'retrying' => 2, 'total' => 13, 'avg_latency_ms' => 180]]]]),
-            $this->jsonResponse(['data' => ['session_id' => 'cs_test_abc123', 'checkout_url' => 'https://checkout.stripe.com/c/pay/cs_test_abc123']]),
-            $this->jsonResponse(['data' => ['portal_url' => 'https://billing.stripe.com/p/session/abc123']]),
             $this->jsonResponse(['data' => ['plan' => 'starter', 'status' => 'active', 'limits' => ['plan' => 'starter', 'messages_per_month' => 5000, 'max_projects' => 3, 'max_endpoints' => 25, 'retention_days' => 30], 'usage' => ['messages_used' => 123, 'period_start' => '2026-02-01T00:00:00Z', 'period_end' => '2026-02-28T23:59:59Z'], 'cancel_at_period_end' => false, 'current_period_end' => '2026-03-01T00:00:00Z']]),
             $this->jsonResponse(['data' => [['period_start' => '2026-02-01', 'period_end' => '2026-02-28', 'message_count' => 6102, 'overage_count' => 1102, 'plan_limit' => 5000]], 'meta' => ['total' => 6, 'limit' => 12, 'offset' => 0, 'has_more' => false]]),
             $this->jsonResponse(['data' => [['id' => 'in_1abc', 'status' => 'paid', 'amount_due' => 1000, 'amount_paid' => 1000, 'currency' => 'usd', 'period_start' => '2026-02-05T00:00:00Z', 'period_end' => '2026-03-05T00:00:00Z', 'created' => '2026-03-05T06:00:00Z', 'invoice_pdf' => 'https://pay.stripe.com/invoice/abc', 'hosted_invoice_url' => 'https://invoice.stripe.com/abc', 'lines' => [['description' => 'Starter Plan (Monthly)', 'amount' => 1000, 'quantity' => 1]]]], 'meta' => ['has_more' => false]]),
@@ -132,34 +126,34 @@ final class SpecParityTest extends TestCase
 
         $replayAll = $client->replayAllMessages('failed_permanent', 'ep_550e8400e29b41d4a716446655440000', 50);
         $replayBatch = $client->replayBatchMessages(['01935abc-def0-7123-4567-890abcdef013', '01935abc-def0-7123-4567-890abcdef014']);
-        $projects = $client->listProjects();
-        $createdProject = $client->createProject('Production Webhooks', 1000);
-        $updatedProject = $client->updateProject('01935abc-def0-7123-4567-890abcdef012', 'Renamed Project', 2000);
-        $client->deleteProject('01935abc-def0-7123-4567-890abcdef012');
         $createdSigningKey = $client->createEndpointSigningKey('ep_550e8400e29b41d4a716446655440000');
         $signingKeys = $client->listEndpointSigningKeys('ep_550e8400e29b41d4a716446655440000');
         $client->deleteEndpointSigningKey('ep_550e8400e29b41d4a716446655440000', 'sk_550e8400e29b41d4a716446655440001');
         $timeseries = $client->getTimeseriesMetrics(endpointId: 'ep_550e8400e29b41d4a716446655440000');
-        $checkout = $client->createCheckout('pro', 'monthly');
-        $portal = $client->createPortal('https://app.hookbridge.io/billing');
         $subscription = $client->getSubscription();
         $usage = $client->getUsageHistory();
         $invoices = $client->getInvoices();
 
         self::assertSame(2, $replayAll->replayed);
         self::assertSame('message not replayable', $replayBatch->results[1]->error);
-        self::assertSame('Production Webhooks', $projects[0]->name);
-        self::assertSame('01935abc-def0-7123-4567-890abcdef012', $createdProject->id);
-        self::assertSame('Renamed Project', $updatedProject->name);
         self::assertSame('whsec_new_secret_12345', $createdSigningKey->signingSecret);
         self::assertSame('sk_550e8400e29b41d4a716446655440001', $signingKeys[0]->id);
         self::assertSame(1, $timeseries->buckets[0]->failed);
-        self::assertSame('cs_test_abc123', $checkout->sessionId);
-        self::assertSame('https://billing.stripe.com/p/session/abc123', $portal->portalUrl);
         self::assertSame('starter', $subscription->plan);
         self::assertSame(123, $subscription->usage->messagesUsed);
         self::assertSame(6102, $usage->rows[0]->messageCount);
         self::assertSame(1, $invoices->invoices[0]->lines[0]->quantity);
+    }
+
+    public function testSessionOnlyMethodsRemoved(): void
+    {
+        foreach (['listProjects', 'createProject', 'getProject', 'updateProject', 'deleteProject', 'createCheckout', 'createPortal'] as $method) {
+            self::assertFalse(method_exists(HookBridge::class, $method), "{$method} should be removed");
+        }
+
+        foreach (['getSubscription', 'getUsageHistory', 'getInvoices'] as $method) {
+            self::assertTrue(method_exists(HookBridge::class, $method), "{$method} should still exist");
+        }
     }
 
     public function testCreateExportSerializesDateTimeImmutable(): void
@@ -564,16 +558,6 @@ final class SpecParityTest extends TestCase
     {
         $client = $this->makeClient([
             $this->jsonResponse([
-                'data' => [
-                    'id' => '01935abc-def0-7123-4567-890abcdef012',
-                    'tenant_id' => 'tenant_abc123',
-                    'name' => 'Production Webhooks',
-                    'status' => 'active',
-                    'rate_limit_default' => 1000,
-                    'created_at' => '2025-12-01T10:00:00Z',
-                ],
-            ]),
-            $this->jsonResponse([
                 'data' => [[
                     'id' => '01935abc-def0-7123-4567-890abcdef001',
                     'attempt_no' => 1,
@@ -616,13 +600,11 @@ final class SpecParityTest extends TestCase
             new Response(204),
         ]);
 
-        $project = $client->getProject('01935abc-def0-7123-4567-890abcdef012');
         $messageAttempts = $client->getMessageAttempts('01935abc-def0-7123-4567-890abcdef013');
         $inboundMessage = $client->getInboundMessage('01935abc-def0-7123-4567-890abcdef012');
         $inboundAttempts = $client->getInboundMessageAttempts('01935abc-def0-7123-4567-890abcdef012');
         $client->deleteExport('01935abc-def0-7123-4567-890abcdef077');
 
-        self::assertSame('Production Webhooks', $project->name);
         self::assertSame(1, $messageAttempts->attempts[0]->attemptNo);
         self::assertSame(140, $messageAttempts->attempts[0]->processingMs);
         self::assertSame('proj_abc123', $inboundMessage->projectId);

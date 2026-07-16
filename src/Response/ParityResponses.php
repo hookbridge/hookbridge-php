@@ -70,39 +70,12 @@ readonly class AttemptsResponse
     ) {}
 }
 
-readonly class Project
-{
-    public function __construct(
-        public string $id,
-        public string $tenantId,
-        public string $name,
-        public string $status,
-        public int $rateLimitDefault,
-        public DateTimeImmutable $createdAt,
-    ) {}
-}
-
 readonly class SigningKey
 {
     public function __construct(
         public string $id,
         public string $keyHint,
         public DateTimeImmutable $createdAt,
-    ) {}
-}
-
-readonly class CheckoutSession
-{
-    public function __construct(
-        public string $sessionId,
-        public string $checkoutUrl,
-    ) {}
-}
-
-readonly class PortalSession
-{
-    public function __construct(
-        public string $portalUrl,
     ) {}
 }
 
