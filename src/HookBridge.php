@@ -31,8 +31,6 @@ use HookBridge\Response\LogsResponse;
 use HookBridge\Response\Message;
 use HookBridge\Response\MessageSummary;
 use HookBridge\Response\Metrics;
-use HookBridge\Response\PortalSession;
-use HookBridge\Response\Project;
 use HookBridge\Response\ReplayAllMessagesResponse;
 use HookBridge\Response\ReplayBatchMessagesResponse;
 use HookBridge\Response\RotateSecretResponse;
@@ -41,7 +39,6 @@ use HookBridge\Response\Subscription;
 use HookBridge\Response\SubscriptionLimits;
 use HookBridge\Response\SubscriptionUsage;
 use HookBridge\Response\SendResponse;
-use HookBridge\Response\CheckoutSession;
 use HookBridge\Response\CreateInboundEndpointResponse as InboundEndpointCreatedResponse;
 use HookBridge\Response\ActorLookupResult;
 use HookBridge\Response\DeleteAllResult;
@@ -107,7 +104,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    private const USER_AGENT = 'hookbridge-php/1.8.0';
+    private const USER_AGENT = 'hookbridge-php/2.0.0';
 
     private Client $client;
     private Client $sendClient;
@@ -536,53 +533,6 @@ class HookBridge
     public function deleteAPIKey(string $keyId): void
     {
         $this->request('DELETE', "/v1/api-keys/{$keyId}");
-    }
-
-    public function listProjects(): array
-    {
-        $response = $this->request('GET', '/v1/projects');
-
-        return array_map(fn(array $project) => new Project(
-            id: $project['id'],
-            tenantId: $project['tenant_id'],
-            name: $project['name'],
-            status: $project['status'],
-            rateLimitDefault: $project['rate_limit_default'],
-            createdAt: new DateTimeImmutable($project['created_at']),
-        ), $response['data']);
-    }
-
-    public function createProject(string $name, ?int $rateLimitDefault = null): Project
-    {
-        $body = ['name' => $name];
-        if ($rateLimitDefault !== null) {
-            $body['rate_limit_default'] = $rateLimitDefault;
-        }
-        $data = $this->request('POST', '/v1/projects', $body)['data'];
-        return $this->parseProject($data);
-    }
-
-    public function getProject(string $projectId): Project
-    {
-        return $this->parseProject($this->request('GET', "/v1/projects/{$projectId}")['data']);
-    }
-
-    public function updateProject(string $projectId, ?string $name = null, ?int $rateLimitDefault = null): Project
-    {
-        $body = [];
-        if ($name !== null) {
-            $body['name'] = $name;
-        }
-        if ($rateLimitDefault !== null) {
-            $body['rate_limit_default'] = $rateLimitDefault;
-        }
-        $data = $this->request('PUT', "/v1/projects/{$projectId}", $body)['data'];
-        return $this->parseProject($data);
-    }
-
-    public function deleteProject(string $projectId): void
-    {
-        $this->request('DELETE', "/v1/projects/{$projectId}");
     }
 
     /**
@@ -1169,27 +1119,6 @@ class HookBridge
                 $data['buckets'] ?? [],
             ),
         );
-    }
-
-    public function createCheckout(string $plan, string $interval): CheckoutSession
-    {
-        $data = $this->request('POST', '/v1/billing/checkout', ['plan' => $plan, 'interval' => $interval])['data'];
-
-        return new CheckoutSession(
-            sessionId: $data['session_id'],
-            checkoutUrl: $data['checkout_url'],
-        );
-    }
-
-    public function createPortal(?string $returnUrl = null): PortalSession
-    {
-        $body = [];
-        if ($returnUrl !== null) {
-            $body['return_url'] = $returnUrl;
-        }
-        $data = $this->request('POST', '/v1/billing/portal', $body)['data'];
-
-        return new PortalSession(portalUrl: $data['portal_url']);
     }
 
     public function getSubscription(): Subscription
@@ -2101,18 +2030,6 @@ class HookBridge
             connReused: $data['conn_reused'] ?? null,
             responseBodyUrl: $data['response_body_url'] ?? null,
             responseBodyTruncated: $data['response_body_truncated'] ?? null,
-        );
-    }
-
-    private function parseProject(array $data): Project
-    {
-        return new Project(
-            id: $data['id'],
-            tenantId: $data['tenant_id'],
-            name: $data['name'],
-            status: $data['status'],
-            rateLimitDefault: $data['rate_limit_default'],
-            createdAt: new DateTimeImmutable($data['created_at']),
         );
     }
 
