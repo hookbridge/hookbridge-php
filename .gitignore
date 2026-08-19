@@ -24,3 +24,6 @@
 /app/Config/database.php
 /vendors/*
 PUBLISHING.md
+
+# Private scratch list — lives in the parent folder, never in a repo
+FINDINGS.md
