@@ -17,5 +17,7 @@ readonly class EndpointSummary
         public ?string $description,
         public bool $paused,
         public DateTimeImmutable $createdAt,
+        public ?bool $ephemeral = null,
+        public ?DateTimeImmutable $expiresAt = null,
     ) {}
 }

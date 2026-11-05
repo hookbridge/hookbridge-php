@@ -25,5 +25,7 @@ readonly class Endpoint
         public bool $paused,
         public DateTimeImmutable $createdAt,
         public DateTimeImmutable $updatedAt,
+        public ?bool $ephemeral = null,
+        public ?DateTimeImmutable $expiresAt = null,
     ) {}
 }

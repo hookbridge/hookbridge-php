@@ -28,5 +28,14 @@ readonly class Message
         public ?string $lastError = null,
         public ?int $responseStatus = null,
         public ?int $responseLatencyMs = null,
+        public ?DateTimeImmutable $firstAttemptAt = null,
+        public ?DateTimeImmutable $deliveredAt = null,
+        public ?int $processingMs = null,
+        public ?int $totalDeliveryMs = null,
+        public ?int $queueWaitMs = null,
+        public ?int $retentionHours = null,
+        public ?DateTimeImmutable $deletedAt = null,
+        public ?string $deletedByUserId = null,
+        public ?string $deletedByApiKeyId = null,
     ) {}
 }

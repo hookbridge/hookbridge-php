@@ -1125,4 +1125,134 @@ final class SpecParityTest extends TestCase
         $this->assertRequest($managementHistory, 5, 'POST', '/v1/pull-endpoints/pe_1/events/delete-all', ['event_type' => 'user.created']);
         $this->assertRequest($managementHistory, 6, 'GET', '/v1/actors/lookup', ['user_id' => 'user_1', 'api_key_id' => 'key_1']);
     }
+
+    public function testNewRequestFieldsAreSent(): void
+    {
+        $history = [];
+        $endpointData = ['id' => 'ep_1', 'url' => 'https://example.com/h', 'signing_secret' => 'whsec_x', 'created_at' => '2026-01-01T00:00:00Z', 'ephemeral' => true, 'expires_at' => '2026-01-01T00:30:00Z'];
+        $inboundData = ['id' => 'ib_1', 'name' => 'n', 'ingest_url' => 'https://in', 'secret_token' => 's', 'created_at' => '2026-01-01T00:00:00Z', 'ephemeral' => true, 'expires_at' => '2026-01-01T00:30:00Z', 'hmac_signature_encoding' => 'base64'];
+        $pullData = ['id' => 'pe_1', 'ingest_url' => 'https://in', 'active' => true, 'paused' => false, 'created_at' => '2026-01-01T00:00:00Z', 'updated_at' => '2026-01-01T00:00:00Z', 'hmac_signature_encoding' => 'hex'];
+        $exportData = ['id' => 'ex_1', 'project_id' => 'p', 'status' => 'pending', 'filter_start_time' => '2026-01-01T00:00:00Z', 'filter_end_time' => '2026-01-02T00:00:00Z', 'created_at' => '2026-01-02T00:00:00Z', 'direction' => 'inbound', 'filter_inbound_endpoint_id' => 'ib_1'];
+        $sendHistory = [];
+        $client = $this->makeClientWithRequestHistory([
+            $this->jsonResponse(['data' => $endpointData], 201),
+            $this->jsonResponse(['data' => $inboundData], 201),
+            $this->jsonResponse(['data' => $pullData], 201),
+            $this->jsonResponse(['data' => $exportData], 202),
+        ], [
+            $this->jsonResponse(['data' => ['message_id' => 'm_1', 'status' => 'queued']], 202),
+        ], $history, $sendHistory);
+
+        $client->send('ep_1', ['a' => 1], retentionHours: 48);
+        $created = $client->createEndpoint('https://example.com/h', ephemeral: true, ttlMinutes: 30);
+        $inbound = $client->createInboundEndpoint(name: 'n', ephemeral: true, ttlMinutes: 15, hmacSignatureEncoding: 'base64');
+        $pull = $client->createPullEndpoint(hmacSignatureEncoding: 'hex', eventTypeSource: 'header');
+        $export = $client->createExport('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', direction: 'inbound', inboundEndpointId: 'ib_1');
+
+        $this->assertRequest($sendHistory, 0, 'POST', '/v1/webhooks/send', [], ['endpoint_id' => 'ep_1', 'payload' => ['a' => 1], 'retention_hours' => 48]);
+        $this->assertRequest($history, 0, 'POST', '/v1/endpoints', [], ['url' => 'https://example.com/h', 'hmac_enabled' => true, 'ephemeral' => true, 'ttl_minutes' => 30]);
+        $this->assertRequest($history, 1, 'POST', '/v1/inbound-endpoints', [], ['name' => 'n', 'ephemeral' => true, 'ttl_minutes' => 15, 'hmac_signature_encoding' => 'base64']);
+        $this->assertRequest($history, 2, 'POST', '/v1/pull-endpoints', [], ['event_type_source' => 'header', 'hmac_signature_encoding' => 'hex']);
+        $this->assertRequest($history, 3, 'POST', '/v1/exports', [], ['start_time' => '2026-01-01T00:00:00Z', 'end_time' => '2026-01-02T00:00:00Z', 'direction' => 'inbound', 'inbound_endpoint_id' => 'ib_1']);
+
+        $this->assertTrue($created->ephemeral);
+        $this->assertSame('2026-01-01T00:30:00+00:00', $created->expiresAt->format('c'));
+        $this->assertTrue($inbound->ephemeral);
+        $this->assertNotNull($inbound->expiresAt);
+        $this->assertSame('base64', $inbound->hmacSignatureEncoding);
+        $this->assertSame('hex', $pull->hmacSignatureEncoding);
+        $this->assertSame('inbound', $export->direction);
+        $this->assertSame('ib_1', $export->filterInboundEndpointId);
+    }
+
+    public function testNewResponseFieldsAreParsed(): void
+    {
+        $messageData = ['id' => 'm_1', 'project_id' => 'p', 'endpoint_id' => 'ep_1', 'status' => 'succeeded', 'attempt_count' => 1, 'replay_count' => 0, 'content_type' => 'application/json', 'size_bytes' => 2, 'payload_sha256' => 'abc', 'created_at' => '2026-01-01T00:00:00Z', 'updated_at' => '2026-01-01T00:00:01Z', 'first_attempt_at' => '2026-01-01T00:00:00Z', 'delivered_at' => '2026-01-01T00:00:01Z', 'processing_ms' => 5, 'total_delivery_ms' => 900, 'queue_wait_ms' => 7, 'retention_hours' => 72, 'deleted_at' => '2026-01-02T00:00:00Z', 'deleted_by_user_id' => 'u_1', 'deleted_by_api_key_id' => 'k_1'];
+        $inboundData = ['id' => 'im_1', 'project_id' => 'p', 'inbound_endpoint_id' => 'ib_1', 'status' => 'succeeded', 'attempt_count' => 1, 'replay_count' => 0, 'received_at' => '2026-01-01T00:00:00Z', 'updated_at' => '2026-01-01T00:00:01Z', 'retention_hours' => 24, 'deleted_at' => '2026-01-02T00:00:00Z', 'deleted_by_user_id' => 'u_1', 'deleted_by_api_key_id' => 'k_1'];
+        $pullEvent = ['id' => 'ev_1', 'status' => 'delivered', 'content_type' => 'application/json', 'payload' => [], 'size_bytes' => 2, 'received_at' => '2026-01-01T00:00:00Z', 'deleted_at' => '2026-01-02T00:00:00Z', 'deleted_by_user_id' => 'u_1', 'deleted_by_api_key_id' => 'k_1'];
+        $endpoint = ['id' => 'ep_1', 'url' => 'https://example.com', 'paused' => false, 'created_at' => '2026-01-01T00:00:00Z', 'updated_at' => '2026-01-01T00:00:00Z', 'ephemeral' => true, 'expires_at' => '2026-01-01T00:30:00Z'];
+        $inboundEndpoint = ['id' => 'ib_1', 'name' => 'n', 'active' => true, 'paused' => false, 'verify_static_token' => false, 'verify_hmac' => true, 'verify_ip_allowlist' => false, 'ingest_response_code' => 200, 'signing_enabled' => false, 'created_at' => '2026-01-01T00:00:00Z', 'updated_at' => '2026-01-01T00:00:00Z', 'ephemeral' => true, 'expires_at' => '2026-01-01T00:30:00Z', 'hmac_signature_encoding' => 'base64'];
+        $summaryRow = ['message_id' => 'm_1', 'endpoint' => 'https://example.com', 'status' => 'succeeded', 'attempt_count' => 1, 'created_at' => '2026-01-01T00:00:00Z', 'first_attempt_at' => '2026-01-01T00:00:01Z', 'processing_ms' => 3, 'total_delivery_ms' => 8, 'queue_wait_ms' => 2, 'deleted_at' => '2026-01-02T00:00:00Z'];
+        $metrics = ['window' => '1h', 'total_messages' => 1, 'succeeded' => 1, 'failed' => 0, 'retries' => 0, 'success_rate' => 100.0, 'avg_latency_ms' => 10, 'avg_delivery_time_ms' => 20, 'avg_queue_wait_ms' => 4];
+        $client = $this->makeClient([
+            $this->jsonResponse(['data' => $messageData]),
+            $this->jsonResponse(['data' => $inboundData]),
+            $this->jsonResponse(['data' => $pullEvent]),
+            $this->jsonResponse(['data' => $endpoint]),
+            $this->jsonResponse(['data' => [$endpoint], 'meta' => []]),
+            $this->jsonResponse(['data' => $inboundEndpoint]),
+            $this->jsonResponse(['data' => [$inboundEndpoint]]),
+            $this->jsonResponse(['data' => [$summaryRow], 'meta' => ['has_more' => false]]),
+            $this->jsonResponse(['data' => $metrics]),
+            $this->jsonResponse(['data' => $metrics]),
+            $this->jsonResponse(['data' => $metrics]),
+            $this->jsonResponse(['data' => ['plan' => 'pro', 'status' => 'active', 'limits' => ['plan' => 'pro', 'messages_per_month' => 5000, 'max_projects' => 3, 'max_endpoints' => 25, 'retention_days' => 30, 'overage_rate_per_message' => 0.002], 'usage' => ['messages_used' => 6000, 'overage_count' => 1000, 'overage_rate' => 0.002, 'estimated_overage_charge' => 2.0, 'period_start' => '2026-02-01T00:00:00Z', 'period_end' => '2026-02-28T23:59:59Z']]]),
+            $this->jsonResponse(['data' => ['replayed' => 0, 'failed' => 1, 'stuck' => 0, 'results' => [['message_id' => 'm_1', 'status' => 'failed', 'error' => 'deleted', 'error_code' => 'MESSAGE_DELETED']]]]),
+            $this->jsonResponse(['data' => ['replayed' => 0, 'failed' => 1, 'stuck' => 0, 'results' => [['message_id' => 'im_1', 'status' => 'failed', 'error' => 'expired', 'error_code' => 'RETENTION_EXPIRED']]]]),
+        ]);
+
+        $message = $client->getMessage('m_1');
+        $inboundMessage = $client->getInboundMessage('im_1');
+        $event = $client->getPullEvent('pe_1', 'ev_1');
+        $got = $client->getEndpoint('ep_1');
+        $listed = $client->listEndpoints();
+        $gotInbound = $client->getInboundEndpoint('ib_1');
+        $listedInbound = $client->listInboundEndpoints();
+        $logs = $client->getLogs();
+        $m = $client->getMetrics('1h');
+        $pm = $client->getPullMetrics('7d');
+        $client->getInboundMetrics('30d');
+        $subscription = $client->getSubscription();
+        $batch = $client->replayBatchMessages(['m_1']);
+        $inboundBatch = $client->replayBatchInboundMessages(['im_1']);
+
+        $this->assertSame('2026-01-01T00:00:00+00:00', $message->firstAttemptAt->format('c'));
+        $this->assertSame('2026-01-01T00:00:01+00:00', $message->deliveredAt->format('c'));
+        $this->assertSame(5, $message->processingMs);
+        $this->assertSame(900, $message->totalDeliveryMs);
+        $this->assertSame(7, $message->queueWaitMs);
+        $this->assertSame(72, $message->retentionHours);
+        $this->assertSame('2026-01-02T00:00:00+00:00', $message->deletedAt->format('c'));
+        $this->assertSame('u_1', $message->deletedByUserId);
+        $this->assertSame('k_1', $message->deletedByApiKeyId);
+
+        $this->assertSame(24, $inboundMessage->retentionHours);
+        $this->assertSame('u_1', $inboundMessage->deletedByUserId);
+        $this->assertSame('k_1', $inboundMessage->deletedByApiKeyId);
+        $this->assertNotNull($inboundMessage->deletedAt);
+
+        $this->assertSame('u_1', $event->deletedByUserId);
+        $this->assertSame('k_1', $event->deletedByApiKeyId);
+        $this->assertNotNull($event->deletedAt);
+
+        $this->assertTrue($got->ephemeral);
+        $this->assertNotNull($got->expiresAt);
+        $this->assertTrue($listed->endpoints[0]->ephemeral);
+        $this->assertNotNull($listed->endpoints[0]->expiresAt);
+        $this->assertTrue($gotInbound->ephemeral);
+        $this->assertNotNull($gotInbound->expiresAt);
+        $this->assertSame('base64', $gotInbound->hmacSignatureEncoding);
+        $this->assertTrue($listedInbound->endpoints[0]->ephemeral);
+        $this->assertNotNull($listedInbound->endpoints[0]->expiresAt);
+
+        $row = $logs->messages[0];
+        $this->assertSame('2026-01-01T00:00:01Z', $row->firstAttemptAt);
+        $this->assertSame(3, $row->processingMs);
+        $this->assertSame(8, $row->totalDeliveryMs);
+        $this->assertSame(2, $row->queueWaitMs);
+        $this->assertSame('2026-01-02T00:00:00Z', $row->deletedAt);
+
+        foreach ([$m, $pm] as $metric) {
+            $this->assertSame(4, $metric->avgQueueWaitMs);
+            $this->assertSame(20, $metric->avgDeliveryTimeMs);
+        }
+
+        $this->assertSame(0.002, $subscription->limits->overageRatePerMessage);
+        $this->assertSame(1000, $subscription->usage->overageCount);
+        $this->assertSame(0.002, $subscription->usage->overageRate);
+        $this->assertSame(2.0, $subscription->usage->estimatedOverageCharge);
+
+        $this->assertSame('MESSAGE_DELETED', $batch->results[0]->errorCode);
+        $this->assertSame('RETENTION_EXPIRED', $inboundBatch->results[0]->errorCode);
+    }
 }

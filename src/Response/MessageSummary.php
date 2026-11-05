@@ -19,5 +19,10 @@ readonly class MessageSummary
         public ?int $responseStatus = null,
         public ?int $responseLatencyMs = null,
         public ?string $lastError = null,
+        public ?string $firstAttemptAt = null,
+        public ?int $processingMs = null,
+        public ?int $totalDeliveryMs = null,
+        public ?int $queueWaitMs = null,
+        public ?string $deletedAt = null,
     ) {}
 }

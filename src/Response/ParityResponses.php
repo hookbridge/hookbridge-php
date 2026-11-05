@@ -23,6 +23,7 @@ readonly class ReplayBatchResult
         public string $messageId,
         public string $status,
         public ?string $error = null,
+        public ?string $errorCode = null,
     ) {}
 }
 
@@ -88,6 +89,7 @@ readonly class SubscriptionLimits
         public int $maxEndpoints,
         public int $retentionDays,
         public ?int $maxRetries = null,
+        public ?float $overageRatePerMessage = null,
     ) {}
 }
 
@@ -97,6 +99,9 @@ readonly class SubscriptionUsage
         public int $messagesUsed,
         public DateTimeImmutable $periodStart,
         public DateTimeImmutable $periodEnd,
+        public ?int $overageCount = null,
+        public ?float $overageRate = null,
+        public ?float $estimatedOverageCharge = null,
     ) {}
 }
 
@@ -181,6 +186,9 @@ readonly class CreateInboundEndpointResponse
         public ?string $signingKeyId = null,
         public ?string $signingSecret = null,
         public ?string $keyHint = null,
+        public ?bool $ephemeral = null,
+        public ?DateTimeImmutable $expiresAt = null,
+        public ?string $hmacSignatureEncoding = null,
     ) {}
 }
 
@@ -207,6 +215,10 @@ readonly class InboundMessage
         public ?int $totalDeliveryMs = null,
         public ?DateTimeImmutable $deliveredAt = null,
         public ?DateTimeImmutable $failedAt = null,
+        public ?int $retentionHours = null,
+        public ?DateTimeImmutable $deletedAt = null,
+        public ?string $deletedByUserId = null,
+        public ?string $deletedByApiKeyId = null,
     ) {}
 }
 
@@ -228,6 +240,9 @@ readonly class InboundEndpoint
         public DateTimeImmutable $createdAt,
         public DateTimeImmutable $updatedAt,
         public ?string $description = null,
+        public ?bool $ephemeral = null,
+        public ?DateTimeImmutable $expiresAt = null,
+        public ?string $hmacSignatureEncoding = null,
     ) {}
 }
 
@@ -241,6 +256,8 @@ readonly class InboundEndpointSummary
         public bool $active,
         public bool $paused,
         public DateTimeImmutable $createdAt,
+        public ?bool $ephemeral = null,
+        public ?DateTimeImmutable $expiresAt = null,
     ) {}
 }
 
@@ -315,6 +332,7 @@ readonly class PullEndpoint
         public ?array $allowedCidrs = null,
         public ?int $ingestResponseCode = null,
         public ?array $idempotencyHeaderNames = null,
+        public ?string $hmacSignatureEncoding = null,
     ) {}
 }
 
@@ -346,6 +364,7 @@ readonly class CreatePullEndpointResponse
         public ?int $ingestResponseCode = null,
         public ?array $idempotencyHeaderNames = null,
         public ?string $secretToken = null,
+        public ?string $hmacSignatureEncoding = null,
     ) {}
 }
 
@@ -408,6 +427,9 @@ readonly class PullEventDetail
         public ?DateTimeImmutable $fetchedAt = null,
         public ?DateTimeImmutable $deliveredAt = null,
         public ?PullTimingBreakdown $timing = null,
+        public ?DateTimeImmutable $deletedAt = null,
+        public ?string $deletedByUserId = null,
+        public ?string $deletedByApiKeyId = null,
     ) {}
 }
 
@@ -586,6 +608,8 @@ readonly class ExportRecord
         public DateTimeImmutable $createdAt,
         public ?string $filterStatus = null,
         public ?string $filterEndpointId = null,
+        public ?string $filterInboundEndpointId = null,
+        public ?string $direction = null,
         public ?int $rowCount = null,
         public ?int $fileSizeBytes = null,
         public ?string $errorMessage = null,
