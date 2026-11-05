@@ -17,5 +17,7 @@ readonly class CreateEndpointResponse
         public string $signingSecret,
         public ?string $description,
         public DateTimeImmutable $createdAt,
+        public ?bool $ephemeral = null,
+        public ?DateTimeImmutable $expiresAt = null,
     ) {}
 }

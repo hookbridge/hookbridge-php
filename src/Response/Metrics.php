@@ -17,5 +17,7 @@ readonly class Metrics
         public int $retries,
         public float $successRate,
         public int $avgLatencyMs,
+        public ?int $avgDeliveryTimeMs = null,
+        public ?int $avgQueueWaitMs = null,
     ) {}
 }

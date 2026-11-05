@@ -104,7 +104,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    private const USER_AGENT = 'hookbridge-php/2.0.0';
+    private const USER_AGENT = 'hookbridge-php/2.1.0';
 
     private Client $client;
     private Client $sendClient;
@@ -165,6 +165,7 @@ class HookBridge
      * @param array<string, mixed> $payload JSON payload to send (max 1 MB)
      * @param array<string, string>|null $headers Optional custom headers to include
      * @param string|null $idempotencyKey Optional key to prevent duplicate sends
+     * @param int|null $retentionHours Optional per-message payload retention override in hours
      *
      * @return SendResponse
      *
@@ -175,6 +176,7 @@ class HookBridge
         array $payload,
         ?array $headers = null,
         ?string $idempotencyKey = null,
+        ?int $retentionHours = null,
     ): SendResponse {
         $body = [
             'endpoint_id' => $endpointId,
@@ -187,6 +189,10 @@ class HookBridge
 
         if ($idempotencyKey !== null) {
             $body['idempotency_key'] = $idempotencyKey;
+        }
+
+        if ($retentionHours !== null) {
+            $body['retention_hours'] = $retentionHours;
         }
 
         $response = $this->requestSend('POST', '/v1/webhooks/send', $body);
@@ -295,6 +301,7 @@ class HookBridge
                     messageId: $result['message_id'],
                     status: $result['status'],
                     error: $result['error'] ?? null,
+                    errorCode: $result['error_code'] ?? null,
                 ),
                 $data['results'] ?? [],
             ),
@@ -382,6 +389,8 @@ class HookBridge
             retries: $data['retries'],
             successRate: $data['success_rate'],
             avgLatencyMs: $data['avg_latency_ms'],
+            avgDeliveryTimeMs: $data['avg_delivery_time_ms'] ?? null,
+            avgQueueWaitMs: $data['avg_queue_wait_ms'] ?? null,
         );
     }
 
@@ -544,6 +553,8 @@ class HookBridge
      * @param int|null $rateLimitRps Rate limit in requests per second (0 = no limit)
      * @param int|null $burst Maximum burst size for rate limiting
      * @param array<string, string>|null $headers Custom headers to include in webhook requests
+     * @param bool|null $ephemeral Create an auto-expiring endpoint for CI/test workflows
+     * @param int|null $ttlMinutes Time-to-live in minutes for ephemeral endpoints (default 30)
      *
      * @return CreateEndpointResponse The created endpoint with signing_secret (shown only once!)
      *
@@ -556,6 +567,8 @@ class HookBridge
         ?int $rateLimitRps = null,
         ?int $burst = null,
         ?array $headers = null,
+        ?bool $ephemeral = null,
+        ?int $ttlMinutes = null,
     ): CreateEndpointResponse {
         $body = [
             'url' => $url,
@@ -574,6 +587,12 @@ class HookBridge
         if ($headers !== null) {
             $body['headers'] = $headers;
         }
+        if ($ephemeral !== null) {
+            $body['ephemeral'] = $ephemeral;
+        }
+        if ($ttlMinutes !== null) {
+            $body['ttl_minutes'] = $ttlMinutes;
+        }
 
         $response = $this->request('POST', '/v1/endpoints', $body);
         $data = $response['data'];
@@ -584,6 +603,8 @@ class HookBridge
             signingSecret: $data['signing_secret'],
             description: $data['description'] ?? null,
             createdAt: new DateTimeImmutable($data['created_at']),
+            ephemeral: $data['ephemeral'] ?? null,
+            expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
         );
     }
 
@@ -612,6 +633,8 @@ class HookBridge
             paused: $data['paused'],
             createdAt: new DateTimeImmutable($data['created_at']),
             updatedAt: new DateTimeImmutable($data['updated_at']),
+            ephemeral: $data['ephemeral'] ?? null,
+            expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
         );
     }
 
@@ -651,6 +674,8 @@ class HookBridge
                     description: $e['description'] ?? null,
                     paused: $e['paused'],
                     createdAt: new DateTimeImmutable($e['created_at']),
+                    ephemeral: $e['ephemeral'] ?? null,
+                    expiresAt: isset($e['expires_at']) ? new DateTimeImmutable($e['expires_at']) : null,
                 ),
                 $response['data']
             ),
@@ -718,6 +743,8 @@ class HookBridge
             paused: $data['paused'],
             createdAt: new DateTimeImmutable($data['created_at']),
             updatedAt: new DateTimeImmutable($data['updated_at']),
+            ephemeral: $data['ephemeral'] ?? null,
+            expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
         );
     }
 
@@ -815,6 +842,7 @@ class HookBridge
         ?array $allowedCidrs = null,
         ?array $idempotencyHeaderNames = null,
         ?int $ingestResponseCode = null,
+        ?string $hmacSignatureEncoding = null,
     ): CreatePullEndpointResponse {
         $body = array_filter([
             'name' => $name,
@@ -835,6 +863,7 @@ class HookBridge
             'allowed_cidrs' => $allowedCidrs,
             'idempotency_header_names' => $idempotencyHeaderNames,
             'ingest_response_code' => $ingestResponseCode,
+            'hmac_signature_encoding' => $hmacSignatureEncoding,
         ], static fn($value) => $value !== null);
 
         $data = $this->request('POST', '/v1/pull-endpoints', $body)['data'];
@@ -866,6 +895,7 @@ class HookBridge
             ingestResponseCode: $endpoint->ingestResponseCode,
             idempotencyHeaderNames: $endpoint->idempotencyHeaderNames,
             secretToken: $data['secret_token'] ?? null,
+            hmacSignatureEncoding: $endpoint->hmacSignatureEncoding,
         );
     }
 
@@ -1007,6 +1037,9 @@ class HookBridge
                 timeToAckMs: $data['timing']['time_to_ack_ms'] ?? null,
                 totalLifecycleMs: $data['timing']['total_lifecycle_ms'] ?? null,
             ) : null,
+            deletedAt: isset($data['deleted_at']) ? new DateTimeImmutable($data['deleted_at']) : null,
+            deletedByUserId: $data['deleted_by_user_id'] ?? null,
+            deletedByApiKeyId: $data['deleted_by_api_key_id'] ?? null,
         );
     }
 
@@ -1095,6 +1128,8 @@ class HookBridge
             retries: $data['retries'],
             successRate: $data['success_rate'],
             avgLatencyMs: $data['avg_latency_ms'],
+            avgDeliveryTimeMs: $data['avg_delivery_time_ms'] ?? null,
+            avgQueueWaitMs: $data['avg_queue_wait_ms'] ?? null,
         );
     }
 
@@ -1137,11 +1172,15 @@ class HookBridge
                 maxEndpoints: $limits['max_endpoints'],
                 retentionDays: $limits['retention_days'],
                 maxRetries: $limits['max_retries'] ?? null,
+                overageRatePerMessage: $limits['overage_rate_per_message'] ?? null,
             ),
             usage: new SubscriptionUsage(
                 messagesUsed: $usage['messages_used'],
                 periodStart: new DateTimeImmutable($usage['period_start']),
                 periodEnd: new DateTimeImmutable($usage['period_end']),
+                overageCount: $usage['overage_count'] ?? null,
+                overageRate: $usage['overage_rate'] ?? null,
+                estimatedOverageCharge: $usage['estimated_overage_charge'] ?? null,
             ),
             cancelAtPeriodEnd: $data['cancel_at_period_end'] ?? null,
             currentPeriodEnd: isset($data['current_period_end'])
@@ -1227,6 +1266,9 @@ class HookBridge
         ?array $idempotencyHeaderNames = null,
         ?int $ingestResponseCode = null,
         ?bool $signingEnabled = null,
+        ?bool $ephemeral = null,
+        ?int $ttlMinutes = null,
+        ?string $hmacSignatureEncoding = null,
     ): InboundEndpointCreatedResponse {
         $body = array_filter([
             'url' => $url,
@@ -1247,6 +1289,9 @@ class HookBridge
             'idempotency_header_names' => $idempotencyHeaderNames,
             'ingest_response_code' => $ingestResponseCode,
             'signing_enabled' => $signingEnabled,
+            'ephemeral' => $ephemeral,
+            'ttl_minutes' => $ttlMinutes,
+            'hmac_signature_encoding' => $hmacSignatureEncoding,
         ], static fn($value) => $value !== null);
 
         $data = $this->request('POST', '/v1/inbound-endpoints', $body)['data'];
@@ -1262,6 +1307,9 @@ class HookBridge
             signingKeyId: $data['signing_key_id'] ?? null,
             signingSecret: $data['signing_secret'] ?? null,
             keyHint: $data['key_hint'] ?? null,
+            ephemeral: $data['ephemeral'] ?? null,
+            expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
+            hmacSignatureEncoding: $data['hmac_signature_encoding'] ?? null,
         );
     }
 
@@ -1287,6 +1335,8 @@ class HookBridge
                     active: $endpoint['active'],
                     paused: $endpoint['paused'],
                     createdAt: new DateTimeImmutable($endpoint['created_at']),
+                    ephemeral: $endpoint['ephemeral'] ?? null,
+                    expiresAt: isset($endpoint['expires_at']) ? new DateTimeImmutable($endpoint['expires_at']) : null,
                 ),
                 $response['data']
             ),
@@ -1315,6 +1365,9 @@ class HookBridge
             createdAt: new DateTimeImmutable($data['created_at']),
             updatedAt: new DateTimeImmutable($data['updated_at']),
             description: $data['description'] ?? null,
+            ephemeral: $data['ephemeral'] ?? null,
+            expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
+            hmacSignatureEncoding: $data['hmac_signature_encoding'] ?? null,
         );
     }
 
@@ -1451,6 +1504,7 @@ class HookBridge
                     messageId: $result['message_id'],
                     status: $result['status'],
                     error: $result['error'] ?? null,
+                    errorCode: $result['error_code'] ?? null,
                 ),
                 $data['results'] ?? [],
             ),
@@ -1584,7 +1638,7 @@ class HookBridge
         );
     }
 
-    public function createExport(string|DateTimeImmutable $startTime, string|DateTimeImmutable $endTime, ?string $status = null, ?string $endpointId = null): ExportRecord
+    public function createExport(string|DateTimeImmutable $startTime, string|DateTimeImmutable $endTime, ?string $status = null, ?string $endpointId = null, ?string $direction = null, ?string $inboundEndpointId = null): ExportRecord
     {
         $body = [
             'start_time' => $startTime instanceof DateTimeImmutable ? $startTime->format('c') : $startTime,
@@ -1595,6 +1649,12 @@ class HookBridge
         }
         if ($endpointId !== null) {
             $body['endpoint_id'] = $endpointId;
+        }
+        if ($direction !== null) {
+            $body['direction'] = $direction;
+        }
+        if ($inboundEndpointId !== null) {
+            $body['inbound_endpoint_id'] = $inboundEndpointId;
         }
         return $this->parseExportRecord($this->request('POST', '/v1/exports', $body)['data']);
     }
@@ -1930,6 +1990,8 @@ class HookBridge
             createdAt: new DateTimeImmutable($data['created_at']),
             filterStatus: $data['filter_status'] ?? null,
             filterEndpointId: $data['filter_endpoint_id'] ?? null,
+            filterInboundEndpointId: $data['filter_inbound_endpoint_id'] ?? null,
+            direction: $data['direction'] ?? null,
             rowCount: $data['row_count'] ?? null,
             fileSizeBytes: $data['file_size_bytes'] ?? null,
             errorMessage: $data['error_message'] ?? null,
@@ -2004,6 +2066,15 @@ class HookBridge
             lastError: $data['last_error'] ?? null,
             responseStatus: $data['response_status'] ?? null,
             responseLatencyMs: $data['response_latency_ms'] ?? null,
+            firstAttemptAt: isset($data['first_attempt_at']) ? new DateTimeImmutable($data['first_attempt_at']) : null,
+            deliveredAt: isset($data['delivered_at']) ? new DateTimeImmutable($data['delivered_at']) : null,
+            processingMs: $data['processing_ms'] ?? null,
+            totalDeliveryMs: $data['total_delivery_ms'] ?? null,
+            queueWaitMs: $data['queue_wait_ms'] ?? null,
+            retentionHours: $data['retention_hours'] ?? null,
+            deletedAt: isset($data['deleted_at']) ? new DateTimeImmutable($data['deleted_at']) : null,
+            deletedByUserId: $data['deleted_by_user_id'] ?? null,
+            deletedByApiKeyId: $data['deleted_by_api_key_id'] ?? null,
         );
     }
 
@@ -2069,6 +2140,7 @@ class HookBridge
             allowedCidrs: $data['allowed_cidrs'] ?? null,
             ingestResponseCode: $data['ingest_response_code'] ?? null,
             idempotencyHeaderNames: $data['idempotency_header_names'] ?? null,
+            hmacSignatureEncoding: $data['hmac_signature_encoding'] ?? null,
         );
     }
 
@@ -2097,6 +2169,10 @@ class HookBridge
             totalDeliveryMs: $data['total_delivery_ms'] ?? null,
             deliveredAt: isset($data['delivered_at']) ? new DateTimeImmutable($data['delivered_at']) : null,
             failedAt: isset($data['failed_at']) ? new DateTimeImmutable($data['failed_at']) : null,
+            retentionHours: $data['retention_hours'] ?? null,
+            deletedAt: isset($data['deleted_at']) ? new DateTimeImmutable($data['deleted_at']) : null,
+            deletedByUserId: $data['deleted_by_user_id'] ?? null,
+            deletedByApiKeyId: $data['deleted_by_api_key_id'] ?? null,
         );
     }
 
@@ -2115,6 +2191,11 @@ class HookBridge
             responseStatus: $data['response_status'] ?? null,
             responseLatencyMs: $data['response_latency_ms'] ?? null,
             lastError: $data['last_error'] ?? null,
+            firstAttemptAt: $data['first_attempt_at'] ?? null,
+            processingMs: $data['processing_ms'] ?? null,
+            totalDeliveryMs: $data['total_delivery_ms'] ?? null,
+            queueWaitMs: $data['queue_wait_ms'] ?? null,
+            deletedAt: $data['deleted_at'] ?? null,
         );
     }
 }
