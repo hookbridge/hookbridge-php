@@ -1255,4 +1255,42 @@ final class SpecParityTest extends TestCase
         $this->assertSame('MESSAGE_DELETED', $batch->results[0]->errorCode);
         $this->assertSame('RETENTION_EXPIRED', $inboundBatch->results[0]->errorCode);
     }
+
+    public function testExportRecordPositionalConstructionKeepsLegacyOrder(): void
+    {
+        $start = new \DateTimeImmutable('2026-01-01T00:00:00Z');
+        $end = new \DateTimeImmutable('2026-01-02T00:00:00Z');
+        $created = new \DateTimeImmutable('2026-01-03T00:00:00Z');
+        $started = new \DateTimeImmutable('2026-01-03T00:00:01Z');
+        $completed = new \DateTimeImmutable('2026-01-03T00:00:02Z');
+        $expires = new \DateTimeImmutable('2026-01-10T00:00:00Z');
+
+        $record = new \HookBridge\Response\ExportRecord(
+            'exp_1',
+            'proj_1',
+            'completed',
+            $start,
+            $end,
+            $created,
+            'failed',
+            'ep_1',
+            42,
+            1024,
+            'boom',
+            $started,
+            $completed,
+            $expires,
+        );
+
+        $this->assertSame('failed', $record->filterStatus);
+        $this->assertSame('ep_1', $record->filterEndpointId);
+        $this->assertSame(42, $record->rowCount);
+        $this->assertSame(1024, $record->fileSizeBytes);
+        $this->assertSame('boom', $record->errorMessage);
+        $this->assertSame($started, $record->startedAt);
+        $this->assertSame($completed, $record->completedAt);
+        $this->assertSame($expires, $record->expiresAt);
+        $this->assertNull($record->filterInboundEndpointId);
+        $this->assertNull($record->direction);
+    }
 }
