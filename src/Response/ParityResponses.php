@@ -608,14 +608,14 @@ readonly class ExportRecord
         public DateTimeImmutable $createdAt,
         public ?string $filterStatus = null,
         public ?string $filterEndpointId = null,
-        public ?string $filterInboundEndpointId = null,
-        public ?string $direction = null,
         public ?int $rowCount = null,
         public ?int $fileSizeBytes = null,
         public ?string $errorMessage = null,
         public ?DateTimeImmutable $startedAt = null,
         public ?DateTimeImmutable $completedAt = null,
         public ?DateTimeImmutable $expiresAt = null,
+        public ?string $filterInboundEndpointId = null,
+        public ?string $direction = null,
     ) {}
 }
 

@@ -104,7 +104,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    private const USER_AGENT = 'hookbridge-php/2.1.0';
+    private const USER_AGENT = 'hookbridge-php/2.1.1';
 
     private Client $client;
     private Client $sendClient;
