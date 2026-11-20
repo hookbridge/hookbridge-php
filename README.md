@@ -62,6 +62,14 @@ $timeseries = $client->getTimeseriesMetrics(endpointId: $endpoint->id);
 
 $client->replay($message->id);
 $client->replayAllMessages('failed_permanent', $endpoint->id, 50);
+
+$preview = $client->replayAllMessagesDryRun('failed_permanent', $endpoint->id, 50);
+echo $preview->wouldReplay;
+
+$actions = $client->listMessageActions($message->id, limit: 25);
+foreach ($actions->actions as $action) {
+    echo "{$action->action} via {$action->via} at {$action->createdAt->format('c')}\n";
+}
 ```
 
 ## Inbound Webhooks
@@ -101,6 +109,9 @@ $inboundLogs = $client->getInboundLogs(inboundEndpointId: $inbound->id, limit: 5
 $inboundMetrics = $client->getInboundMetrics(inboundEndpointId: $inbound->id);
 $inboundTimeseries = $client->getInboundTimeseriesMetrics(inboundEndpointId: $inbound->id);
 $rejections = $client->listInboundRejections(inboundEndpointId: $inbound->id, limit: 25);
+$inboundPreview = $client->replayAllInboundMessagesDryRun('failed_permanent', $inbound->id, 50);
+// Takes an inbound message ID, not the inbound endpoint ID
+$inboundActions = $client->listInboundMessageActions($inboundMessageId, limit: 25);
 ```
 
 ## Billing and Exports
