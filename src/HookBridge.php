@@ -31,6 +31,9 @@ use HookBridge\Response\LogsResponse;
 use HookBridge\Response\Message;
 use HookBridge\Response\MessageSummary;
 use HookBridge\Response\Metrics;
+use HookBridge\Response\ListMessageActionsResponse;
+use HookBridge\Response\MessageAction;
+use HookBridge\Response\ReplayAllDryRunResponse;
 use HookBridge\Response\ReplayAllMessagesResponse;
 use HookBridge\Response\ReplayBatchMessagesResponse;
 use HookBridge\Response\RotateSecretResponse;
@@ -285,6 +288,27 @@ class HookBridge
             replayedMessageIds: $data['replayed_message_ids'] ?? [],
             stuckMessageIds: $data['stuck_message_ids'] ?? [],
         );
+    }
+
+    public function replayAllMessagesDryRun(string $status, ?string $endpointId = null, ?int $limit = null): ReplayAllDryRunResponse
+    {
+        $params = ['status' => $status];
+        if ($endpointId !== null) {
+            $params['endpoint_id'] = $endpointId;
+        }
+        if ($limit !== null) {
+            $params['limit'] = (string) $limit;
+        }
+        $params['dry_run'] = 'true';
+
+        $data = $this->request('POST', '/v1/messages/replay-all?' . http_build_query($params))['data'];
+
+        return new ReplayAllDryRunResponse(wouldReplay: $data['would_replay']);
+    }
+
+    public function listMessageActions(string $messageId, ?string $cursor = null, ?int $limit = null): ListMessageActionsResponse
+    {
+        return $this->fetchMessageActions('/v1/messages/' . rawurlencode($messageId) . '/actions', $cursor, $limit);
     }
 
     public function replayBatchMessages(array $messageIds): ReplayBatchMessagesResponse
@@ -1491,6 +1515,27 @@ class HookBridge
         );
     }
 
+    public function replayAllInboundMessagesDryRun(string $status, ?string $inboundEndpointId = null, ?int $limit = null): ReplayAllDryRunResponse
+    {
+        $params = ['status' => $status];
+        if ($inboundEndpointId !== null) {
+            $params['inbound_endpoint_id'] = $inboundEndpointId;
+        }
+        if ($limit !== null) {
+            $params['limit'] = (string) $limit;
+        }
+        $params['dry_run'] = 'true';
+
+        $data = $this->request('POST', '/v1/inbound-messages/replay-all?' . http_build_query($params))['data'];
+
+        return new ReplayAllDryRunResponse(wouldReplay: $data['would_replay']);
+    }
+
+    public function listInboundMessageActions(string $messageId, ?string $cursor = null, ?int $limit = null): ListMessageActionsResponse
+    {
+        return $this->fetchMessageActions('/v1/inbound-messages/' . rawurlencode($messageId) . '/actions', $cursor, $limit);
+    }
+
     public function replayBatchInboundMessages(array $messageIds): ReplayBatchMessagesResponse
     {
         $data = $this->request('POST', '/v1/inbound-messages/replay-batch', ['message_ids' => $messageIds])['data'];
@@ -1977,6 +2022,39 @@ class HookBridge
         }
 
         throw $lastException ?? new HookBridgeException('Request failed');
+    }
+
+    private function fetchMessageActions(string $path, ?string $cursor, ?int $limit): ListMessageActionsResponse
+    {
+        $params = [];
+        if ($cursor !== null) {
+            $params['cursor'] = $cursor;
+        }
+        if ($limit !== null) {
+            $params['limit'] = (string) $limit;
+        }
+        if ($params !== []) {
+            $path .= '?' . http_build_query($params);
+        }
+
+        $response = $this->request('GET', $path);
+
+        return new ListMessageActionsResponse(
+            actions: array_map(
+                static fn(array $action) => new MessageAction(
+                    id: $action['id'],
+                    action: $action['action'],
+                    userId: $action['user_id'] ?? null,
+                    apiKeyId: $action['api_key_id'] ?? null,
+                    via: $action['via'],
+                    clientName: $action['client_name'] ?? null,
+                    createdAt: new DateTimeImmutable($action['created_at']),
+                ),
+                $response['data'] ?? [],
+            ),
+            hasMore: $response['meta']['has_more'] ?? false,
+            nextCursor: $response['meta']['next_cursor'] ?? null,
+        );
     }
 
     private function parseExportRecord(array $data): ExportRecord

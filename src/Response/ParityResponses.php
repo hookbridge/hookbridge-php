@@ -17,6 +17,38 @@ readonly class ReplayAllMessagesResponse
     ) {}
 }
 
+readonly class ReplayAllDryRunResponse
+{
+    public function __construct(
+        public int $wouldReplay,
+    ) {}
+}
+
+readonly class MessageAction
+{
+    public function __construct(
+        public string $id,
+        public string $action,
+        public ?string $userId,
+        public ?string $apiKeyId,
+        public string $via,
+        public ?string $clientName,
+        public DateTimeImmutable $createdAt,
+    ) {}
+}
+
+readonly class ListMessageActionsResponse
+{
+    /**
+     * @param MessageAction[] $actions
+     */
+    public function __construct(
+        public array $actions,
+        public bool $hasMore,
+        public ?string $nextCursor = null,
+    ) {}
+}
+
 readonly class ReplayBatchResult
 {
     public function __construct(
