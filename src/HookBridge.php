@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace HookBridge;
 
 require_once __DIR__ . '/Response/ParityResponses.php';
-require_once __DIR__ . '/Response/EventResponses.php';
 
 use DateTimeImmutable;
 use GuzzleHttp\Client;
