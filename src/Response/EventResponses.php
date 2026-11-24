@@ -8,7 +8,7 @@ use DateTimeImmutable;
 
 /**
  * Which events an endpoint receives. If both lists are empty the endpoint receives all events.
- * A null list is left out of requests.
+ * A null list is sent as an empty list.
  */
 readonly class EventSubscriptions
 {
@@ -23,15 +23,10 @@ readonly class EventSubscriptions
 
     public function toArray(): array
     {
-        $body = [];
-        if ($this->eventTypes !== null) {
-            $body['event_types'] = $this->eventTypes;
-        }
-        if ($this->groups !== null) {
-            $body['groups'] = $this->groups;
-        }
-
-        return $body;
+        return [
+            'event_types' => $this->eventTypes ?? [],
+            'groups' => $this->groups ?? [],
+        ];
     }
 }
 

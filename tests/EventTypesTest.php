@@ -359,7 +359,7 @@ final class EventTypesTest extends TestCase
         $fetched = $client->getEndpoint(self::EP);
 
         self::assertSame(['a.b'], $createdResponse->subscriptions->eventTypes);
-        self::assertSame(['event_types' => ['a.b']], $this->body($mgmt)['subscriptions']);
+        self::assertSame(['event_types' => ['a.b'], 'groups' => []], $this->body($mgmt)['subscriptions']);
         self::assertArrayNotHasKey('subscriptions', $this->body($mgmt, 1));
         self::assertSame('{"event_types":[],"groups":[]}', json_encode(json_decode((string) $mgmt[2]['request']->getBody())->subscriptions));
         self::assertSame(['a.*'], $fetched->subscriptions->eventTypes);
@@ -561,5 +561,70 @@ final class EventTypesTest extends TestCase
 
         self::assertFalse($result->hasMore);
         self::assertNull($result->nextCursor);
+    }
+
+    public function testEmptySubscriptionsSerializeAsEmptyLists(): void
+    {
+        $mgmt = [];
+        $send = [];
+        $full = ['id' => self::EP, 'url' => 'https://x.test', 'paused' => false, 'created_at' => '2026-06-01T00:00:00Z', 'updated_at' => '2026-06-01T00:00:00Z'];
+        $client = $this->makeClient([$this->json(['data' => $full])], [], $mgmt, $send);
+
+        $client->updateEndpoint(self::EP, subscriptions: new EventSubscriptions());
+
+        self::assertSame('{"subscriptions":{"event_types":[],"groups":[]}}', (string) $mgmt[0]['request']->getBody());
+    }
+
+    public function testEmptyArraysEncodeAsJsonObjects(): void
+    {
+        $mgmt = [];
+        $send = [];
+        $client = $this->makeClient([
+            $this->json(['data' => $this->eventTypeData()], 201),
+            $this->json(['data' => $this->eventTypeData()]),
+            $this->json(['data' => ['message_id' => 'm1', 'status' => 'queued', 'event_type' => 'a', 'is_test' => true]], 202),
+        ], [
+            $this->json(['data' => ['event_id' => 'e', 'event_type' => 'a', 'status' => 'accepted']], 202),
+        ], $mgmt, $send);
+
+        $client->sendEvent('a', []);
+        $client->createEventType('a', schema: [], samplePayload: []);
+        $client->updateEventType('a', ['schema' => [], 'sample_payload' => [], 'group' => null]);
+        $client->sendTestEvent(self::EP, 'a', []);
+
+        self::assertSame('{"event_type":"a","payload":{}}', (string) $send[0]['request']->getBody());
+        self::assertSame('{"name":"a","schema":{},"sample_payload":{}}', (string) $mgmt[0]['request']->getBody());
+        self::assertSame('{"schema":{},"sample_payload":{},"group":null}', (string) $mgmt[1]['request']->getBody());
+        self::assertSame('{"event_type":"a","payload":{}}', (string) $mgmt[2]['request']->getBody());
+    }
+
+    public function testEndpointIdIsEncodedInRecoverAndTestPaths(): void
+    {
+        $mgmt = [];
+        $send = [];
+        $client = $this->makeClient([
+            $this->json(['data' => ['recover_job_id' => 'j', 'status' => 'pending']], 202),
+            $this->json(['data' => ['message_id' => 'm1', 'status' => 'queued', 'event_type' => 'a', 'is_test' => true]], 202),
+        ], [], $mgmt, $send);
+
+        $client->recoverEndpoint('a/b', '2026-06-01T00:00:00Z');
+        $client->sendTestEvent('a/b', 'a');
+
+        self::assertSame('/v1/endpoints/a%2Fb/recover', $mgmt[0]['request']->getUri()->getPath());
+        self::assertSame('/v1/endpoints/a%2Fb/test', $mgmt[1]['request']->getUri()->getPath());
+    }
+
+    public function testGetRecoverJobEncodesEndpointId(): void
+    {
+        $mgmt = [];
+        $send = [];
+        $client = $this->makeClient([$this->json(['data' => [
+            'recover_job_id' => 'j', 'endpoint_id' => 'x', 'status' => 'done', 'created_count' => 0, 'requeued_count' => 0,
+            'since' => '2026-06-01T00:00:00Z', 'until' => '2026-06-02T00:00:00Z', 'created_at' => '2026-06-02T00:00:00Z',
+        ]])], [], $mgmt, $send);
+
+        $client->getRecoverJob('a/b', 'j');
+
+        self::assertSame('/v1/endpoints/a%2Fb/recover/j', $mgmt[0]['request']->getUri()->getPath());
     }
 }

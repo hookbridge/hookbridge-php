@@ -246,7 +246,7 @@ class HookBridge
     ): SendEventResponse {
         $body = [
             'event_type' => $eventType,
-            'payload' => $payload,
+            'payload' => $this->jsonObject($payload),
         ];
 
         if ($endpointId !== null) {
@@ -299,10 +299,10 @@ class HookBridge
             $body['group'] = $group;
         }
         if ($schema !== null) {
-            $body['schema'] = $schema;
+            $body['schema'] = $this->jsonObject($schema);
         }
         if ($samplePayload !== null) {
-            $body['sample_payload'] = $samplePayload;
+            $body['sample_payload'] = $this->jsonObject($samplePayload);
         }
         if ($deprecated !== null) {
             $body['deprecated'] = $deprecated;
@@ -380,6 +380,12 @@ class HookBridge
      */
     public function updateEventType(string $name, array $attributes): EventType
     {
+        foreach (['schema', 'sample_payload'] as $key) {
+            if (isset($attributes[$key])) {
+                $attributes[$key] = $this->jsonObject($attributes[$key]);
+            }
+        }
+
         return $this->parseEventType($this->request('PATCH', $this->eventTypePath($name), $attributes)['data']);
     }
 
@@ -551,7 +557,7 @@ class HookBridge
             $body['until'] = $this->formatTime($until);
         }
 
-        $data = $this->request('POST', "/v1/endpoints/{$endpointId}/recover", $body)['data'];
+        $data = $this->request('POST', '/v1/endpoints/' . rawurlencode($endpointId) . '/recover', $body)['data'];
 
         return new RecoverJobStarted(recoverJobId: $data['recover_job_id'], status: $data['status']);
     }
@@ -563,7 +569,7 @@ class HookBridge
      */
     public function getRecoverJob(string $endpointId, string $jobId): RecoverJob
     {
-        $data = $this->request('GET', "/v1/endpoints/{$endpointId}/recover/" . rawurlencode($jobId))['data'];
+        $data = $this->request('GET', '/v1/endpoints/' . rawurlencode($endpointId) . '/recover/' . rawurlencode($jobId))['data'];
 
         return new RecoverJob(
             recoverJobId: $data['recover_job_id'],
@@ -590,10 +596,10 @@ class HookBridge
         $body = ['event_type' => $eventType];
 
         if ($payload !== null) {
-            $body['payload'] = $payload;
+            $body['payload'] = $this->jsonObject($payload);
         }
 
-        $data = $this->request('POST', "/v1/endpoints/{$endpointId}/test", $body)['data'];
+        $data = $this->request('POST', '/v1/endpoints/' . rawurlencode($endpointId) . '/test', $body)['data'];
 
         return new SendTestEventResponse(
             messageId: $data['message_id'],
@@ -1016,7 +1022,7 @@ class HookBridge
             $body['ttl_minutes'] = $ttlMinutes;
         }
         if ($subscriptions !== null) {
-            $body['subscriptions'] = $this->subscriptionsBody($subscriptions);
+            $body['subscriptions'] = $subscriptions->toArray();
         }
 
         $response = $this->request('POST', '/v1/endpoints', $body);
@@ -1164,7 +1170,7 @@ class HookBridge
             $body['headers'] = $headers;
         }
         if ($subscriptions !== null) {
-            $body['subscriptions'] = $this->subscriptionsBody($subscriptions);
+            $body['subscriptions'] = $subscriptions->toArray();
         }
 
         $response = $this->request('PATCH', "/v1/endpoints/{$endpointId}", $body);
@@ -2457,9 +2463,9 @@ class HookBridge
         return $time instanceof DateTimeImmutable ? $time->format('c') : $time;
     }
 
-    private function subscriptionsBody(EventSubscriptions $subscriptions): array|object
+    private function jsonObject(mixed $value): mixed
     {
-        return $subscriptions->toArray() ?: new \stdClass();
+        return $value === [] ? new \stdClass() : $value;
     }
 
     private function parseSubscriptions(?array $data): ?EventSubscriptions
