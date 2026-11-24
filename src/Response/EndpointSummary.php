@@ -19,5 +19,6 @@ readonly class EndpointSummary
         public DateTimeImmutable $createdAt,
         public ?bool $ephemeral = null,
         public ?DateTimeImmutable $expiresAt = null,
+        public ?EventSubscriptions $subscriptions = null,
     ) {}
 }

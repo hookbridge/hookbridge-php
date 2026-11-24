@@ -19,7 +19,7 @@ final class VersionTest extends TestCase
 {
     public function testVersionConstant(): void
     {
-        self::assertSame('2.2.0', HookBridge::VERSION);
+        self::assertSame('2.3.0', HookBridge::VERSION);
     }
 
     public function testManagementClientSendsVersionedUserAgent(): void
@@ -64,6 +64,6 @@ final class VersionTest extends TestCase
         self::assertCount(1, $history);
         $userAgent = $history[0]['request']->getHeaderLine('User-Agent');
         self::assertSame('hookbridge-php/' . HookBridge::VERSION, $userAgent);
-        self::assertSame('hookbridge-php/2.2.0', $userAgent);
+        self::assertSame('hookbridge-php/2.3.0', $userAgent);
     }
 }

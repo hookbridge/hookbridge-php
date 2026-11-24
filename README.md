@@ -72,6 +72,48 @@ foreach ($actions->actions as $action) {
 }
 ```
 
+## Event Types
+
+Register event types, subscribe endpoints to them, and send events by type. Wildcards like `order.*` are supported in subscriptions.
+
+```php
+use HookBridge\Response\EventSubscriptions;
+
+$client->createEventType('order.created', group: 'orders', description: 'Order placed');
+
+$endpoint = $client->createEndpoint(
+    url: 'https://customer.app/webhooks',
+    subscriptions: new EventSubscriptions(eventTypes: ['order.*']),
+);
+$client->updateEndpoint($endpoint->id, subscriptions: new EventSubscriptions(eventTypes: ['order.created']));
+$subscribed = $client->listEndpoints(eventType: 'order.created');
+
+$types = $client->listEventTypes(namePrefix: 'order.');
+$client->updateEventType('order.created', ['description' => 'New description', 'group' => null]);
+$client->archiveEventType('order.created');
+$client->unarchiveEventType('order.created');
+$groups = $client->listEventTypeGroups();
+```
+
+## Events, Recovery, and Test Events
+
+```php
+// Fan out to every subscribed endpoint (or pass endpointId: to target one)
+$sent = $client->sendEvent('order.created', ['order_id' => 'ord_123']);
+
+$event = $client->getEvent($sent->eventId);
+echo "{$event->fanoutStatus}: {$event->matchedCount} endpoints\n";
+$events = $client->listEvents(eventType: 'order.created', since: '2026-06-01T00:00:00Z');
+$client->deleteEvent($sent->eventId);
+
+// Give an endpoint the events it missed
+$job = $client->recoverEndpoint($endpoint->id, since: '2026-06-01T00:00:00Z');
+$status = $client->getRecoverJob($endpoint->id, $job->recoverJobId);
+
+// Check a receiver with the event type's sample payload (or pass a payload)
+$client->sendTestEvent($endpoint->id, 'order.created');
+```
+
 ## Inbound Webhooks
 
 ```php
