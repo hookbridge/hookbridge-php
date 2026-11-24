@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace HookBridge;
 
 require_once __DIR__ . '/Response/ParityResponses.php';
+require_once __DIR__ . '/Response/EventResponses.php';
 
 use DateTimeImmutable;
 use GuzzleHttp\Client;
@@ -25,6 +26,18 @@ use HookBridge\Response\CreateEndpointResponse;
 use HookBridge\Response\DLQResponse;
 use HookBridge\Response\Endpoint;
 use HookBridge\Response\EndpointSummary;
+use HookBridge\Response\Event;
+use HookBridge\Response\EventDetail;
+use HookBridge\Response\EventMessage;
+use HookBridge\Response\EventSubscriptions;
+use HookBridge\Response\EventType;
+use HookBridge\Response\EventTypeGroup;
+use HookBridge\Response\ListEventsResponse;
+use HookBridge\Response\ListEventTypesResponse;
+use HookBridge\Response\RecoverJob;
+use HookBridge\Response\RecoverJobStarted;
+use HookBridge\Response\SendEventResponse;
+use HookBridge\Response\SendTestEventResponse;
 use HookBridge\Response\InboundMessage;
 use HookBridge\Response\ListEndpointsResponse;
 use HookBridge\Response\LogsResponse;
@@ -107,7 +120,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    public const VERSION = '2.2.0';
+    public const VERSION = '2.3.0';
     private const USER_AGENT = 'hookbridge-php/' . self::VERSION;
 
     private Client $client;
@@ -205,6 +218,388 @@ class HookBridge
         return new SendResponse(
             messageId: $data['message_id'],
             status: $data['status'],
+        );
+    }
+
+    /**
+     * Send an event by type. Without an endpoint the event is delivered to every endpoint whose
+     * subscriptions match.
+     *
+     * @param string $eventType Event type name (e.g., "order.created")
+     * @param array<string, mixed> $payload JSON payload to send (max 1 MB)
+     * @param string|null $endpointId Deliver to this endpoint only
+     * @param array<string, string>|null $headers Optional custom headers to include
+     * @param string|null $idempotencyKey Optional key to prevent duplicate sends
+     * @param int|null $retentionHours Optional per-message payload retention override in hours
+     *
+     * @return SendEventResponse
+     *
+     * @throws HookBridgeException
+     */
+    public function sendEvent(
+        string $eventType,
+        array $payload,
+        ?string $endpointId = null,
+        ?array $headers = null,
+        ?string $idempotencyKey = null,
+        ?int $retentionHours = null,
+    ): SendEventResponse {
+        $body = [
+            'event_type' => $eventType,
+            'payload' => $payload,
+        ];
+
+        if ($endpointId !== null) {
+            $body['endpoint_id'] = $endpointId;
+        }
+        if ($headers !== null) {
+            $body['headers'] = $headers;
+        }
+        if ($idempotencyKey !== null) {
+            $body['idempotency_key'] = $idempotencyKey;
+        }
+        if ($retentionHours !== null) {
+            $body['retention_hours'] = $retentionHours;
+        }
+
+        $data = $this->requestSend('POST', '/v1/webhooks/send', $body)['data'];
+
+        return new SendEventResponse(
+            eventId: $data['event_id'],
+            eventType: $data['event_type'],
+            status: $data['status'],
+            messageId: $data['message_id'] ?? null,
+        );
+    }
+
+    /**
+     * Create an event type.
+     *
+     * @param string $name Lowercase letters, digits, "_", "-" and "." as separator
+     * @param array<string, mixed>|null $schema JSON Schema object (parse-checked only)
+     * @param mixed $samplePayload Example payload
+     *
+     * @throws HookBridgeException
+     */
+    public function createEventType(
+        string $name,
+        ?string $description = null,
+        ?string $group = null,
+        ?array $schema = null,
+        mixed $samplePayload = null,
+        ?bool $deprecated = null,
+        ?bool $public = null,
+    ): EventType {
+        $body = ['name' => $name];
+
+        if ($description !== null) {
+            $body['description'] = $description;
+        }
+        if ($group !== null) {
+            $body['group'] = $group;
+        }
+        if ($schema !== null) {
+            $body['schema'] = $schema;
+        }
+        if ($samplePayload !== null) {
+            $body['sample_payload'] = $samplePayload;
+        }
+        if ($deprecated !== null) {
+            $body['deprecated'] = $deprecated;
+        }
+        if ($public !== null) {
+            $body['public'] = $public;
+        }
+
+        return $this->parseEventType($this->request('POST', '/v1/event-types', $body)['data']);
+    }
+
+    /**
+     * List event types, ordered by name.
+     *
+     * @param int|null $limit Maximum results to return (1-1000, default 50)
+     * @param string|null $cursor Pagination cursor from previous response
+     * @param string|null $group Only types in this group
+     * @param string|null $namePrefix Only types whose name starts with this prefix
+     * @param bool|null $includeArchived Include archived types
+     *
+     * @throws HookBridgeException
+     */
+    public function listEventTypes(
+        ?int $limit = null,
+        ?string $cursor = null,
+        ?string $group = null,
+        ?string $namePrefix = null,
+        ?bool $includeArchived = null,
+    ): ListEventTypesResponse {
+        $params = [];
+
+        if ($limit !== null) {
+            $params['limit'] = (string) $limit;
+        }
+        if ($cursor !== null) {
+            $params['cursor'] = $cursor;
+        }
+        if ($group !== null) {
+            $params['group'] = $group;
+        }
+        if ($namePrefix !== null) {
+            $params['name_prefix'] = $namePrefix;
+        }
+        if ($includeArchived !== null) {
+            $params['include_archived'] = $includeArchived ? 'true' : 'false';
+        }
+
+        $response = $this->request('GET', '/v1/event-types' . $this->queryString($params));
+        $nextCursor = ($response['meta']['next_cursor'] ?? '') !== '' ? $response['meta']['next_cursor'] : null;
+
+        return new ListEventTypesResponse(
+            eventTypes: array_map(fn(array $t) => $this->parseEventType($t), $response['data']),
+            hasMore: $nextCursor !== null,
+            nextCursor: $nextCursor,
+        );
+    }
+
+    /**
+     * Get one event type by name (archived types are returned too).
+     *
+     * @throws HookBridgeException
+     */
+    public function getEventType(string $name): EventType
+    {
+        return $this->parseEventType($this->request('GET', $this->eventTypePath($name))['data']);
+    }
+
+    /**
+     * Update an event type. Keys are API field names (description, group, schema, sample_payload,
+     * deprecated, public). Omitted keys are unchanged; null clears group, schema and sample_payload.
+     *
+     * @param array<string, mixed> $attributes
+     *
+     * @throws HookBridgeException
+     */
+    public function updateEventType(string $name, array $attributes): EventType
+    {
+        return $this->parseEventType($this->request('PATCH', $this->eventTypePath($name), $attributes)['data']);
+    }
+
+    /**
+     * Archive an event type. Nothing is deleted; the type stays readable.
+     *
+     * @throws HookBridgeException
+     */
+    public function archiveEventType(string $name): EventType
+    {
+        return $this->parseEventType($this->request('DELETE', $this->eventTypePath($name))['data']);
+    }
+
+    /**
+     * Restore an archived event type.
+     *
+     * @throws HookBridgeException
+     */
+    public function unarchiveEventType(string $name): EventType
+    {
+        return $this->parseEventType($this->request('POST', $this->eventTypePath($name) . '/unarchive')['data']);
+    }
+
+    /**
+     * List the event type group names in use, with the number of active types in each.
+     *
+     * @return EventTypeGroup[]
+     *
+     * @throws HookBridgeException
+     */
+    public function listEventTypeGroups(): array
+    {
+        $response = $this->request('GET', '/v1/event-type-groups');
+
+        return array_map(
+            static fn(array $g) => new EventTypeGroup(name: $g['name'], count: $g['count']),
+            $response['data'],
+        );
+    }
+
+    /**
+     * List events created by sends that used an event type, newest first.
+     *
+     * @param int|null $limit Maximum results to return (1-500, default 50)
+     * @param string|null $cursor Pagination cursor from previous response
+     * @param string|null $eventType Only events of this type
+     * @param DateTimeImmutable|string|null $since Only events created at or after this time
+     * @param DateTimeImmutable|string|null $until Only events created before this time
+     *
+     * @throws HookBridgeException
+     */
+    public function listEvents(
+        ?int $limit = null,
+        ?string $cursor = null,
+        ?string $eventType = null,
+        DateTimeImmutable|string|null $since = null,
+        DateTimeImmutable|string|null $until = null,
+    ): ListEventsResponse {
+        $params = [];
+
+        if ($limit !== null) {
+            $params['limit'] = (string) $limit;
+        }
+        if ($cursor !== null) {
+            $params['cursor'] = $cursor;
+        }
+        if ($eventType !== null) {
+            $params['event_type'] = $eventType;
+        }
+        if ($since !== null) {
+            $params['since'] = $this->formatTime($since);
+        }
+        if ($until !== null) {
+            $params['until'] = $this->formatTime($until);
+        }
+
+        $response = $this->request('GET', '/v1/events' . $this->queryString($params));
+        $nextCursor = ($response['meta']['next_cursor'] ?? '') !== '' ? $response['meta']['next_cursor'] : null;
+
+        return new ListEventsResponse(
+            events: array_map(fn(array $e) => $this->parseEvent($e), $response['data']),
+            hasMore: $response['meta']['has_more'] ?? false,
+            nextCursor: $nextCursor,
+        );
+    }
+
+    /**
+     * Get one event with its fanned-out messages.
+     *
+     * @param int|null $messagesLimit Maximum messages to return (1-500, default 100)
+     * @param string|null $messagesCursor Cursor from messagesNextCursor of the previous response
+     *
+     * @throws HookBridgeException
+     */
+    public function getEvent(string $eventId, ?int $messagesLimit = null, ?string $messagesCursor = null): EventDetail
+    {
+        $params = [];
+
+        if ($messagesLimit !== null) {
+            $params['messages_limit'] = (string) $messagesLimit;
+        }
+        if ($messagesCursor !== null) {
+            $params['messages_cursor'] = $messagesCursor;
+        }
+
+        $data = $this->request('GET', '/v1/events/' . rawurlencode($eventId) . $this->queryString($params))['data'];
+
+        return new EventDetail(
+            id: $data['id'],
+            projectId: $data['project_id'],
+            eventType: $data['event_type'],
+            payloadSha256: $data['payload_sha256'],
+            contentType: $data['content_type'],
+            sizeBytes: $data['size_bytes'],
+            fanoutStatus: $data['fanout_status'],
+            matchedCount: $data['matched_count'],
+            createdAt: new DateTimeImmutable($data['created_at']),
+            payloadAvailable: $data['payload_available'],
+            messages: array_map(
+                static fn(array $m) => new EventMessage(
+                    id: $m['id'],
+                    endpointId: $m['endpoint_id'],
+                    status: $m['status'],
+                    attemptCount: $m['attempt_count'],
+                    createdAt: new DateTimeImmutable($m['created_at']),
+                    nextAttemptAt: isset($m['next_attempt_at']) ? new DateTimeImmutable($m['next_attempt_at']) : null,
+                    deletedAt: isset($m['deleted_at']) ? new DateTimeImmutable($m['deleted_at']) : null,
+                ),
+                $data['messages'] ?? [],
+            ),
+            messagesHasMore: $data['messages_has_more'] ?? false,
+            headers: $data['headers'] ?? null,
+            idempotencyKey: $data['idempotency_key'] ?? null,
+            retentionHours: $data['retention_hours'] ?? null,
+            targetEndpointId: $data['target_endpoint_id'] ?? null,
+            fannedOutAt: isset($data['fanned_out_at']) ? new DateTimeImmutable($data['fanned_out_at']) : null,
+            deletedAt: isset($data['deleted_at']) ? new DateTimeImmutable($data['deleted_at']) : null,
+            payloadUrl: $data['payload_url'] ?? null,
+            messagesNextCursor: ($data['messages_next_cursor'] ?? '') !== '' ? $data['messages_next_cursor'] : null,
+        );
+    }
+
+    /**
+     * Delete an event and all of its messages. Deleting an already deleted event succeeds.
+     *
+     * @throws HookBridgeException
+     */
+    public function deleteEvent(string $eventId): void
+    {
+        $this->request('DELETE', '/v1/events/' . rawurlencode($eventId));
+    }
+
+    /**
+     * Start a job that gives an endpoint the events it missed in a time window.
+     *
+     * @param DateTimeImmutable|string $since Start of the window (must be within plan retention)
+     * @param DateTimeImmutable|string|null $until End of the window (defaults to now)
+     *
+     * @throws HookBridgeException
+     */
+    public function recoverEndpoint(
+        string $endpointId,
+        DateTimeImmutable|string $since,
+        DateTimeImmutable|string|null $until = null,
+    ): RecoverJobStarted {
+        $body = ['since' => $this->formatTime($since)];
+
+        if ($until !== null) {
+            $body['until'] = $this->formatTime($until);
+        }
+
+        $data = $this->request('POST', "/v1/endpoints/{$endpointId}/recover", $body)['data'];
+
+        return new RecoverJobStarted(recoverJobId: $data['recover_job_id'], status: $data['status']);
+    }
+
+    /**
+     * Get the status of a recover job.
+     *
+     * @throws HookBridgeException
+     */
+    public function getRecoverJob(string $endpointId, string $jobId): RecoverJob
+    {
+        $data = $this->request('GET', "/v1/endpoints/{$endpointId}/recover/" . rawurlencode($jobId))['data'];
+
+        return new RecoverJob(
+            recoverJobId: $data['recover_job_id'],
+            endpointId: $data['endpoint_id'],
+            status: $data['status'],
+            createdCount: $data['created_count'],
+            requeuedCount: $data['requeued_count'],
+            since: new DateTimeImmutable($data['since']),
+            until: new DateTimeImmutable($data['until']),
+            createdAt: new DateTimeImmutable($data['created_at']),
+            finishedAt: isset($data['finished_at']) ? new DateTimeImmutable($data['finished_at']) : null,
+        );
+    }
+
+    /**
+     * Send one test message of an existing event type to an endpoint.
+     *
+     * @param array<string, mixed>|null $payload Defaults to the event type's sample payload
+     *
+     * @throws HookBridgeException
+     */
+    public function sendTestEvent(string $endpointId, string $eventType, ?array $payload = null): SendTestEventResponse
+    {
+        $body = ['event_type' => $eventType];
+
+        if ($payload !== null) {
+            $body['payload'] = $payload;
+        }
+
+        $data = $this->request('POST', "/v1/endpoints/{$endpointId}/test", $body)['data'];
+
+        return new SendTestEventResponse(
+            messageId: $data['message_id'],
+            status: $data['status'],
+            eventType: $data['event_type'],
+            isTest: $data['is_test'],
         );
     }
 
@@ -580,6 +975,7 @@ class HookBridge
      * @param array<string, string>|null $headers Custom headers to include in webhook requests
      * @param bool|null $ephemeral Create an auto-expiring endpoint for CI/test workflows
      * @param int|null $ttlMinutes Time-to-live in minutes for ephemeral endpoints (default 30)
+     * @param EventSubscriptions|null $subscriptions Which event types the endpoint receives (empty lists mean all events)
      *
      * @return CreateEndpointResponse The created endpoint with signing_secret (shown only once!)
      *
@@ -594,6 +990,7 @@ class HookBridge
         ?array $headers = null,
         ?bool $ephemeral = null,
         ?int $ttlMinutes = null,
+        ?EventSubscriptions $subscriptions = null,
     ): CreateEndpointResponse {
         $body = [
             'url' => $url,
@@ -618,6 +1015,9 @@ class HookBridge
         if ($ttlMinutes !== null) {
             $body['ttl_minutes'] = $ttlMinutes;
         }
+        if ($subscriptions !== null) {
+            $body['subscriptions'] = $this->subscriptionsBody($subscriptions);
+        }
 
         $response = $this->request('POST', '/v1/endpoints', $body);
         $data = $response['data'];
@@ -630,6 +1030,7 @@ class HookBridge
             createdAt: new DateTimeImmutable($data['created_at']),
             ephemeral: $data['ephemeral'] ?? null,
             expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
+            subscriptions: $this->parseSubscriptions($data['subscriptions'] ?? null),
         );
     }
 
@@ -660,6 +1061,7 @@ class HookBridge
             updatedAt: new DateTimeImmutable($data['updated_at']),
             ephemeral: $data['ephemeral'] ?? null,
             expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
+            subscriptions: $this->parseSubscriptions($data['subscriptions'] ?? null),
         );
     }
 
@@ -668,14 +1070,19 @@ class HookBridge
      *
      * @param int|null $limit Maximum results to return (1-100, default 50)
      * @param string|null $cursor Pagination cursor from previous response
+     * @param string|null $eventType Only endpoints that would receive an event of this type
      *
      * @return ListEndpointsResponse
      *
      * @throws HookBridgeException
      */
-    public function listEndpoints(?int $limit = null, ?string $cursor = null): ListEndpointsResponse
+    public function listEndpoints(?int $limit = null, ?string $cursor = null, ?string $eventType = null): ListEndpointsResponse
     {
         $params = [];
+
+        if ($eventType !== null) {
+            $params['event_type'] = $eventType;
+        }
 
         if ($limit !== null) {
             $params['limit'] = (string) $limit;
@@ -701,11 +1108,12 @@ class HookBridge
                     createdAt: new DateTimeImmutable($e['created_at']),
                     ephemeral: $e['ephemeral'] ?? null,
                     expiresAt: isset($e['expires_at']) ? new DateTimeImmutable($e['expires_at']) : null,
+                    subscriptions: $this->parseSubscriptions($e['subscriptions'] ?? null),
                 ),
                 $response['data']
             ),
-            hasMore: isset($response['meta']['next_cursor']),
-            nextCursor: $response['meta']['next_cursor'] ?? null,
+            hasMore: ($response['meta']['next_cursor'] ?? '') !== '',
+            nextCursor: ($response['meta']['next_cursor'] ?? '') !== '' ? $response['meta']['next_cursor'] : null,
         );
     }
 
@@ -719,6 +1127,7 @@ class HookBridge
      * @param int|null $rateLimitRps New rate limit (optional)
      * @param int|null $burst New burst size (optional)
      * @param array<string, string>|null $headers New custom headers (optional)
+     * @param EventSubscriptions|null $subscriptions Replaces the endpoint's subscriptions (optional, omitted means unchanged)
      *
      * @return Endpoint The updated endpoint
      *
@@ -732,6 +1141,7 @@ class HookBridge
         ?int $rateLimitRps = null,
         ?int $burst = null,
         ?array $headers = null,
+        ?EventSubscriptions $subscriptions = null,
     ): Endpoint {
         $body = [];
 
@@ -753,6 +1163,9 @@ class HookBridge
         if ($headers !== null) {
             $body['headers'] = $headers;
         }
+        if ($subscriptions !== null) {
+            $body['subscriptions'] = $this->subscriptionsBody($subscriptions);
+        }
 
         $response = $this->request('PATCH', "/v1/endpoints/{$endpointId}", $body);
         $data = $response['data'];
@@ -770,6 +1183,7 @@ class HookBridge
             updatedAt: new DateTimeImmutable($data['updated_at']),
             ephemeral: $data['ephemeral'] ?? null,
             expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
+            subscriptions: $this->parseSubscriptions($data['subscriptions'] ?? null),
         );
     }
 
@@ -2025,6 +2439,81 @@ class HookBridge
         throw $lastException ?? new HookBridgeException('Request failed');
     }
 
+    private function eventTypePath(string $name): string
+    {
+        return '/v1/event-types/' . rawurlencode($name);
+    }
+
+    /**
+     * @param array<string, string> $params
+     */
+    private function queryString(array $params): string
+    {
+        return $params === [] ? '' : '?' . http_build_query($params);
+    }
+
+    private function formatTime(DateTimeImmutable|string $time): string
+    {
+        return $time instanceof DateTimeImmutable ? $time->format('c') : $time;
+    }
+
+    private function subscriptionsBody(EventSubscriptions $subscriptions): array|object
+    {
+        return $subscriptions->toArray() ?: new \stdClass();
+    }
+
+    private function parseSubscriptions(?array $data): ?EventSubscriptions
+    {
+        if ($data === null) {
+            return null;
+        }
+
+        return new EventSubscriptions(
+            eventTypes: $data['event_types'] ?? [],
+            groups: $data['groups'] ?? [],
+        );
+    }
+
+    private function parseEventType(array $data): EventType
+    {
+        return new EventType(
+            id: $data['id'],
+            name: $data['name'],
+            description: $data['description'] ?? null,
+            group: $data['group'] ?? null,
+            schema: $data['schema'] ?? null,
+            samplePayload: $data['sample_payload'] ?? null,
+            deprecated: $data['deprecated'],
+            public: $data['public'],
+            autoCreated: $data['auto_created'],
+            archivedAt: isset($data['archived_at']) ? new DateTimeImmutable($data['archived_at']) : null,
+            createdAt: new DateTimeImmutable($data['created_at']),
+            updatedAt: new DateTimeImmutable($data['updated_at']),
+        );
+    }
+
+    private function parseEvent(array $data): Event
+    {
+        return new Event(
+            id: $data['id'],
+            projectId: $data['project_id'],
+            eventType: $data['event_type'],
+            payloadSha256: $data['payload_sha256'],
+            contentType: $data['content_type'],
+            sizeBytes: $data['size_bytes'],
+            fanoutStatus: $data['fanout_status'],
+            matchedCount: $data['matched_count'],
+            createdAt: new DateTimeImmutable($data['created_at']),
+            payloadAvailable: $data['payload_available'],
+            headers: $data['headers'] ?? null,
+            idempotencyKey: $data['idempotency_key'] ?? null,
+            retentionHours: $data['retention_hours'] ?? null,
+            targetEndpointId: $data['target_endpoint_id'] ?? null,
+            fannedOutAt: isset($data['fanned_out_at']) ? new DateTimeImmutable($data['fanned_out_at']) : null,
+            deletedAt: isset($data['deleted_at']) ? new DateTimeImmutable($data['deleted_at']) : null,
+        );
+    }
+
     private function fetchMessageActions(string $path, ?string $cursor, ?int $limit): ListMessageActionsResponse
     {
         $params = [];
@@ -2095,8 +2584,10 @@ class HookBridge
             $code = $data['error']['code'] ?? 'UNKNOWN_ERROR';
             $message = $data['error']['message'] ?? "HTTP {$statusCode}";
             $requestId = $data['meta']['request_id'] ?? null;
+            $details = $data['error']['details'] ?? null;
         } catch (\JsonException) {
             $code = 'UNKNOWN_ERROR';
+            $details = null;
             $message = "HTTP {$statusCode}";
             $requestId = null;
         }
@@ -2110,14 +2601,16 @@ class HookBridge
                 : new HookBridgeException($message, $code, $requestId, $statusCode),
             429 => $code === 'REPLAY_LIMIT_EXCEEDED'
                 ? new ReplayLimitException($message, $requestId)
-                : new RateLimitException(
+                : (str_ends_with($code, '_LIMIT_REACHED')
+                    ? new HookBridgeException($message, $code, $requestId, $statusCode, $details)
+                    : new RateLimitException(
                     $message,
                     $requestId,
                     isset($response->getHeader('Retry-After')[0])
                         ? (int) $response->getHeader('Retry-After')[0]
                         : null
-                ),
-            default => new HookBridgeException($message, $code, $requestId, $statusCode),
+                )),
+            default => new HookBridgeException($message, $code, $requestId, $statusCode, $details),
         };
     }
 
