@@ -136,8 +136,9 @@ class HookBridge
      * @param string|null $sendUrl Base URL for the webhook send API (default: https://send.hookbridge.io)
      * @param float $timeout Request timeout in seconds (default: 30)
      * @param int $retries Number of retries for failed requests (default: 3)
+     * @param string|null $clientName Optional self-reported client name sent as X-Hookbridge-Client and recorded in the audit trail of replay, retry and cancel actions (printable ASCII, the server truncates to 200 bytes; not authenticated)
      *
-     * @throws ValidationException If API key is empty
+     * @throws ValidationException If API key is empty or clientName contains non-printable or non-ASCII characters
      */
     public function __construct(
         string $apiKey,
@@ -145,9 +146,13 @@ class HookBridge
         ?string $sendUrl = null,
         float $timeout = self::DEFAULT_TIMEOUT,
         int $retries = self::DEFAULT_RETRIES,
+        ?string $clientName = null,
     ) {
         if (empty($apiKey)) {
             throw new ValidationException('API key is required');
+        }
+        if ($clientName !== null && $clientName !== '' && preg_match('/^[\x20-\x7E]+$/D', $clientName) !== 1) {
+            throw new ValidationException('clientName must contain only printable ASCII characters');
         }
 
         $this->baseUrl = rtrim($baseUrl ?? getenv('HOOKBRIDGE_BASE_URL') ?: self::DEFAULT_BASE_URL, '/');
@@ -160,6 +165,9 @@ class HookBridge
             'Accept' => 'application/json',
             'User-Agent' => self::USER_AGENT,
         ];
+        if ($clientName !== null && $clientName !== '') {
+            $commonHeaders['X-Hookbridge-Client'] = $clientName;
+        }
 
         $this->client = new Client([
             'base_uri' => $this->baseUrl,
@@ -524,6 +532,7 @@ class HookBridge
             deletedAt: isset($data['deleted_at']) ? new DateTimeImmutable($data['deleted_at']) : null,
             payloadUrl: $data['payload_url'] ?? null,
             messagesNextCursor: ($data['messages_next_cursor'] ?? '') !== '' ? $data['messages_next_cursor'] : null,
+            statusCounts: $data['status_counts'] ?? [],
         );
     }
 
@@ -741,6 +750,7 @@ class HookBridge
      * @param DateTimeImmutable|string|null $endTime Filter messages created before this time
      * @param int|null $limit Maximum results to return (1-500, default 50)
      * @param string|null $cursor Pagination cursor from previous response
+     * @param string|null $endpointId Filter by endpoint ID (e.g., "ep_550e8400e29b41d4a716446655440000")
      *
      * @return LogsResponse
      *
@@ -752,6 +762,7 @@ class HookBridge
         DateTimeImmutable|string|null $endTime = null,
         ?int $limit = null,
         ?string $cursor = null,
+        ?string $endpointId = null,
     ): LogsResponse {
         $params = [];
 
@@ -773,6 +784,9 @@ class HookBridge
         }
         if ($cursor !== null) {
             $params['cursor'] = $cursor;
+        }
+        if ($endpointId !== null) {
+            $params['endpoint_id'] = $endpointId;
         }
 
         $path = '/v1/logs';
@@ -2516,6 +2530,7 @@ class HookBridge
             targetEndpointId: $data['target_endpoint_id'] ?? null,
             fannedOutAt: isset($data['fanned_out_at']) ? new DateTimeImmutable($data['fanned_out_at']) : null,
             deletedAt: isset($data['deleted_at']) ? new DateTimeImmutable($data['deleted_at']) : null,
+            statusCounts: $data['status_counts'] ?? [],
         );
     }
 
@@ -2652,6 +2667,9 @@ class HookBridge
             deletedAt: isset($data['deleted_at']) ? new DateTimeImmutable($data['deleted_at']) : null,
             deletedByUserId: $data['deleted_by_user_id'] ?? null,
             deletedByApiKeyId: $data['deleted_by_api_key_id'] ?? null,
+            eventType: $data['event_type'] ?? null,
+            eventId: $data['event_id'] ?? null,
+            isTest: $data['is_test'] ?? null,
         );
     }
 
@@ -2773,6 +2791,9 @@ class HookBridge
             totalDeliveryMs: $data['total_delivery_ms'] ?? null,
             queueWaitMs: $data['queue_wait_ms'] ?? null,
             deletedAt: $data['deleted_at'] ?? null,
+            eventType: $data['event_type'] ?? null,
+            eventId: $data['event_id'] ?? null,
+            isTest: $data['is_test'] ?? null,
         );
     }
 }

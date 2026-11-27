@@ -46,6 +46,14 @@ $rotated = $client->rotateEndpointSecret($endpoint->id);
 $client->deleteEndpoint($endpoint->id);
 ```
 
+## Client Name
+
+Pass `clientName` to send an `X-Hookbridge-Client` header on every request. The server records it in the audit trail of replay, retry, and cancel actions. It must be printable ASCII (the server truncates to 200 bytes) and is not authenticated; a value with other characters throws `ValidationException`.
+
+```php
+$client = new HookBridge('hb_live_xxxxxxxxxxxxxxxxxxxx', clientName: 'billing-service/1.4');
+```
+
 ## Sending and Observability
 
 ```php
@@ -57,8 +65,12 @@ $result = $client->send(
 
 $message = $client->getMessage($result->messageId);
 $logs = $client->getLogs(limit: 100);
+$endpointLogs = $client->getLogs(endpointId: $endpoint->id);
 $metrics = $client->getMetrics();
 $timeseries = $client->getTimeseriesMetrics(endpointId: $endpoint->id);
+
+// Messages and log entries sent from an event carry eventType, eventId and isTest (null otherwise)
+echo $message->eventType;
 
 $client->replay($message->id);
 $client->replayAllMessages('failed_permanent', $endpoint->id, 50);
@@ -103,6 +115,7 @@ $sent = $client->sendEvent('order.created', ['order_id' => 'ord_123']);
 
 $event = $client->getEvent($sent->eventId);
 echo "{$event->fanoutStatus}: {$event->matchedCount} endpoints\n";
+print_r($event->statusCounts); // e.g. ['succeeded' => 2, 'deleted' => 1]
 $events = $client->listEvents(eventType: 'order.created', since: '2026-06-01T00:00:00Z');
 $client->deleteEvent($sent->eventId);
 

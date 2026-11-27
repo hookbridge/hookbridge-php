@@ -8,6 +8,9 @@ use DateTimeImmutable;
 
 readonly class EventMessage
 {
+    /**
+     * @param string $endpointId Public endpoint id (ep_ followed by 32 hex characters)
+     */
     public function __construct(
         public string $id,
         public string $endpointId,

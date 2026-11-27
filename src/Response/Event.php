@@ -10,6 +10,8 @@ readonly class Event
 {
     /**
      * @param array<string, string>|null $headers
+     * @param string|null $targetEndpointId Public endpoint id (ep_ followed by 32 hex characters)
+     * @param array<string, int> $statusCounts Message count per status (including "deleted")
      */
     public function __construct(
         public string $id,
@@ -28,5 +30,6 @@ readonly class Event
         public ?string $targetEndpointId = null,
         public ?DateTimeImmutable $fannedOutAt = null,
         public ?DateTimeImmutable $deletedAt = null,
+        public array $statusCounts = [],
     ) {}
 }
