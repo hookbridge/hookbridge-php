@@ -37,6 +37,7 @@ use HookBridge\Response\RecoverJob;
 use HookBridge\Response\RecoverJobStarted;
 use HookBridge\Response\SendEventResponse;
 use HookBridge\Response\SendTestEventResponse;
+use HookBridge\Response\UpdateEndpointResponse;
 use HookBridge\Response\InboundMessage;
 use HookBridge\Response\ListEndpointsResponse;
 use HookBridge\Response\LogsResponse;
@@ -119,7 +120,7 @@ class HookBridge
     private const DEFAULT_SEND_URL = 'https://send.hookbridge.io';
     private const DEFAULT_TIMEOUT = 30.0;
     private const DEFAULT_RETRIES = 3;
-    public const VERSION = '2.3.0';
+    public const VERSION = '2.3.1';
     private const USER_AGENT = 'hookbridge-php/' . self::VERSION;
 
     private Client $client;
@@ -1148,7 +1149,7 @@ class HookBridge
      * @param array<string, string>|null $headers New custom headers (optional)
      * @param EventSubscriptions|null $subscriptions Replaces the endpoint's subscriptions (optional, omitted means unchanged)
      *
-     * @return Endpoint The updated endpoint
+     * @return UpdateEndpointResponse The endpoint ID, whether it was updated, and its subscriptions when returned
      *
      * @throws HookBridgeException
      */
@@ -1161,7 +1162,7 @@ class HookBridge
         ?int $burst = null,
         ?array $headers = null,
         ?EventSubscriptions $subscriptions = null,
-    ): Endpoint {
+    ): UpdateEndpointResponse {
         $body = [];
 
         if ($url !== null) {
@@ -1189,19 +1190,9 @@ class HookBridge
         $response = $this->request('PATCH', "/v1/endpoints/{$endpointId}", $body);
         $data = $response['data'];
 
-        return new Endpoint(
+        return new UpdateEndpointResponse(
             id: $data['id'],
-            url: $data['url'],
-            description: $data['description'] ?? null,
-            hmacEnabled: $data['hmac_enabled'] ?? true,
-            rateLimitRps: $data['rate_limit_rps'] ?? null,
-            burst: $data['burst'] ?? null,
-            headers: $data['headers'] ?? null,
-            paused: $data['paused'],
-            createdAt: new DateTimeImmutable($data['created_at']),
-            updatedAt: new DateTimeImmutable($data['updated_at']),
-            ephemeral: $data['ephemeral'] ?? null,
-            expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
+            updated: $data['updated'],
             subscriptions: $this->parseSubscriptions($data['subscriptions'] ?? null),
         );
     }

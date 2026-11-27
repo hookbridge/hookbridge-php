@@ -346,10 +346,11 @@ final class EventTypesTest extends TestCase
         $send = [];
         $created = ['id' => self::EP, 'url' => 'https://x.test', 'signing_secret' => 's', 'created_at' => '2026-06-01T00:00:00Z', 'subscriptions' => ['event_types' => ['a.b'], 'groups' => []]];
         $full = ['id' => self::EP, 'url' => 'https://x.test', 'paused' => false, 'created_at' => '2026-06-01T00:00:00Z', 'updated_at' => '2026-06-01T00:00:00Z', 'subscriptions' => ['event_types' => ['a.*'], 'groups' => ['g']]];
+        $updated = ['id' => self::EP, 'updated' => true];
         $client = $this->makeClient([
             $this->json(['data' => $created], 201),
-            $this->json(['data' => $full]),
-            $this->json(['data' => $full]),
+            $this->json(['data' => $updated]),
+            $this->json(['data' => $updated]),
             $this->json(['data' => $full]),
         ], [], $mgmt, $send);
 
@@ -563,12 +564,42 @@ final class EventTypesTest extends TestCase
         self::assertNull($result->nextCursor);
     }
 
+    public function testUpdateEndpointParsesSpecResponseWithoutSubscriptions(): void
+    {
+        $mgmt = [];
+        $send = [];
+        $client = $this->makeClient([$this->json(['data' => ['id' => self::EP, 'updated' => true]])], [], $mgmt, $send);
+
+        $result = $client->updateEndpoint(self::EP, description: 'd');
+
+        self::assertSame(self::EP, $result->id);
+        self::assertTrue($result->updated);
+        self::assertNull($result->subscriptions);
+    }
+
+    public function testUpdateEndpointParsesSpecResponseWithSubscriptions(): void
+    {
+        $mgmt = [];
+        $send = [];
+        $client = $this->makeClient([
+            $this->json(['data' => ['id' => self::EP, 'updated' => true, 'subscriptions' => ['event_types' => ['a.*'], 'groups' => ['g']]]]),
+            $this->json(['data' => ['id' => self::EP, 'updated' => false, 'subscriptions' => null]]),
+        ], [], $mgmt, $send);
+
+        $with = $client->updateEndpoint(self::EP, subscriptions: new EventSubscriptions(eventTypes: ['a.*'], groups: ['g']));
+        $nulled = $client->updateEndpoint(self::EP, description: 'd');
+
+        self::assertSame(['a.*'], $with->subscriptions->eventTypes);
+        self::assertSame(['g'], $with->subscriptions->groups);
+        self::assertFalse($nulled->updated);
+        self::assertNull($nulled->subscriptions);
+    }
+
     public function testEmptySubscriptionsSerializeAsEmptyLists(): void
     {
         $mgmt = [];
         $send = [];
-        $full = ['id' => self::EP, 'url' => 'https://x.test', 'paused' => false, 'created_at' => '2026-06-01T00:00:00Z', 'updated_at' => '2026-06-01T00:00:00Z'];
-        $client = $this->makeClient([$this->json(['data' => $full])], [], $mgmt, $send);
+        $client = $this->makeClient([$this->json(['data' => ['id' => self::EP, 'updated' => true]])], [], $mgmt, $send);
 
         $client->updateEndpoint(self::EP, subscriptions: new EventSubscriptions());
 

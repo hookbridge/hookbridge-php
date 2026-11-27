@@ -14,6 +14,7 @@ final class ResponseAutoloadTest extends TestCase
     {
         $names = [
             'EventSubscriptions',
+            'UpdateEndpointResponse',
             'SendEventResponse',
             'EventType',
             'ListEventTypesResponse',

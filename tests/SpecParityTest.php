@@ -707,15 +707,7 @@ final class SpecParityTest extends TestCase
             $this->jsonResponse([
                 'data' => [
                     'id' => 'ep_550e8400e29b41d4a716446655440000',
-                    'url' => 'https://customer.app/updated-webhooks',
-                    'description' => 'Updated outbound endpoint',
-                    'hmac_enabled' => false,
-                    'rate_limit_rps' => 15,
-                    'burst' => 25,
-                    'headers' => ['X-Test' => '2'],
-                    'paused' => false,
-                    'created_at' => '2025-12-01T10:00:00Z',
-                    'updated_at' => '2025-12-06T12:30:00Z',
+                    'updated' => true,
                 ],
             ]),
             new Response(204),
@@ -814,7 +806,8 @@ final class SpecParityTest extends TestCase
         self::assertSame('SDK Test Key', $apiKeys[0]->label);
         self::assertSame('hb_test_new_secret', $createdKey->key);
         self::assertSame('whsec_original_secret', $createdEndpoint->signingSecret);
-        self::assertSame('https://customer.app/updated-webhooks', $updatedEndpoint->url);
+        self::assertSame('ep_550e8400e29b41d4a716446655440000', $updatedEndpoint->id);
+        self::assertTrue($updatedEndpoint->updated);
         self::assertSame('whsec_rotated_secret', $rotatedSecret->signingSecret);
         self::assertSame(125, $exports[0]->rowCount);
         self::assertSame(2048, $export->fileSizeBytes);
