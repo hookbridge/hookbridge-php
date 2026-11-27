@@ -144,7 +144,7 @@ final class SpecSyncTest extends TestCase
 
     public function testClientNameRejectsUnsafeValues(): void
     {
-        foreach (["a\r\nX-Evil: 1", "a\nb", "a\rb", "caf\u{e9}", "a\x00b", "a\x7fb"] as $bad) {
+        foreach (["a\r\nX-Evil: 1", "a\nb", "a\rb", "caf\u{e9}", "a\x00b", "a\x7fb", "abc\n", "abc\r\n", "abc\r"] as $bad) {
             try {
                 new HookBridge('hb_test_mock_key', clientName: $bad);
                 self::fail('expected ValidationException');

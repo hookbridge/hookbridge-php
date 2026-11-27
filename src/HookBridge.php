@@ -151,7 +151,7 @@ class HookBridge
         if (empty($apiKey)) {
             throw new ValidationException('API key is required');
         }
-        if ($clientName !== null && $clientName !== '' && preg_match('/^[\x20-\x7E]+$/', $clientName) !== 1) {
+        if ($clientName !== null && $clientName !== '' && preg_match('/^[\x20-\x7E]+$/D', $clientName) !== 1) {
             throw new ValidationException('clientName must contain only printable ASCII characters');
         }
 
