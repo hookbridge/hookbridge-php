@@ -328,7 +328,8 @@ class IntegrationTest extends TestCase
             endpointId: $endpoint->id,
             description: 'Updated description'
         );
-        $this->assertEquals('Updated description', $updated->description);
+        $this->assertTrue($updated->updated);
+        $this->assertEquals('Updated description', self::$client->getEndpoint($endpoint->id)->description);
 
         // Delete
         self::$client->deleteEndpoint($endpoint->id);
