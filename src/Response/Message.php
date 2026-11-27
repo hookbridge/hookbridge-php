@@ -40,5 +40,6 @@ readonly class Message
         public ?string $eventType = null,
         public ?string $eventId = null,
         public ?bool $isTest = null,
+        public ?DateTimeImmutable $failedAt = null,
     ) {}
 }

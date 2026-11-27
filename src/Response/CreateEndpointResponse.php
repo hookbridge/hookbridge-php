@@ -20,5 +20,7 @@ readonly class CreateEndpointResponse
         public ?bool $ephemeral = null,
         public ?DateTimeImmutable $expiresAt = null,
         public ?EventSubscriptions $subscriptions = null,
+        public ?string $signingKeyId = null,
+        public ?string $keyHint = null,
     ) {}
 }

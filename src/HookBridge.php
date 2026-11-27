@@ -152,9 +152,7 @@ class HookBridge
         if (empty($apiKey)) {
             throw new ValidationException('API key is required');
         }
-        if ($clientName !== null && $clientName !== '' && preg_match('/^[\x20-\x7E]+$/D', $clientName) !== 1) {
-            throw new ValidationException('clientName must contain only printable ASCII characters');
-        }
+        self::assertValidClientName($clientName);
 
         $this->baseUrl = rtrim($baseUrl ?? getenv('HOOKBRIDGE_BASE_URL') ?: self::DEFAULT_BASE_URL, '/');
         $this->sendUrl = rtrim($sendUrl ?? getenv('HOOKBRIDGE_SEND_URL') ?: self::DEFAULT_SEND_URL, '/');
@@ -183,6 +181,22 @@ class HookBridge
         ]);
     }
 
+    private static function assertValidClientName(?string $clientName): void
+    {
+        if ($clientName !== null && $clientName !== '' && preg_match('/^[\x20-\x7E]+$/D', $clientName) !== 1) {
+            throw new ValidationException('clientName must contain only printable ASCII characters');
+        }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function clientNameHeaders(?string $clientName): array
+    {
+        self::assertValidClientName($clientName);
+        return $clientName !== null && $clientName !== '' ? ['X-Hookbridge-Client' => $clientName] : [];
+    }
+
     /**
      * Send a webhook for delivery.
      *
@@ -205,11 +219,11 @@ class HookBridge
     ): SendResponse {
         $body = [
             'endpoint_id' => $endpointId,
-            'payload' => $payload,
+            'payload' => $this->jsonObject($payload),
         ];
 
         if ($headers !== null) {
-            $body['headers'] = $headers;
+            $body['headers'] = $this->jsonObject($headers);
         }
 
         if ($idempotencyKey !== null) {
@@ -638,11 +652,27 @@ class HookBridge
      *
      * @param string $messageId The message ID to replay
      *
+     * @param string|null $clientName Per-call X-Hookbridge-Client override (printable ASCII)
+     *
+     * @return SendResponse The message ID and new status; status is '' if the server returned no body
+     *
      * @throws HookBridgeException
      */
-    public function replay(string $messageId): void
+    public function replay(string $messageId, ?string $clientName = null): SendResponse
     {
-        $this->request('POST', "/v1/messages/{$messageId}/replay");
+        return $this->messageActionResponse($messageId, "/v1/messages/{$messageId}/replay", $clientName);
+    }
+
+    private function messageActionResponse(string $messageId, string $path, ?string $clientName): SendResponse
+    {
+        $response = $this->request('POST', $path, null, $this->clientNameHeaders($clientName));
+        $data = $response['data'] ?? [];
+
+        return new SendResponse(
+            messageId: $data['message_id'] ?? $messageId,
+            status: $data['status'] ?? '',
+            message: $response['message'] ?? null,
+        );
     }
 
     public function getMessageAttempts(string $messageId): AttemptsResponse
@@ -660,11 +690,15 @@ class HookBridge
      *
      * @param string $messageId The message ID to cancel
      *
+     * @param string|null $clientName Per-call X-Hookbridge-Client override (printable ASCII)
+     *
+     * @return SendResponse The message ID and new status; status is '' if the server returned no body
+     *
      * @throws HookBridgeException
      */
-    public function cancelRetry(string $messageId): void
+    public function cancelRetry(string $messageId, ?string $clientName = null): SendResponse
     {
-        $this->request('POST', "/v1/messages/{$messageId}/cancel");
+        return $this->messageActionResponse($messageId, "/v1/messages/{$messageId}/cancel", $clientName);
     }
 
     /**
@@ -672,14 +706,18 @@ class HookBridge
      *
      * @param string $messageId The message ID to retry
      *
+     * @param string|null $clientName Per-call X-Hookbridge-Client override (printable ASCII)
+     *
+     * @return SendResponse The message ID and new status; status is '' if the server returned no body
+     *
      * @throws HookBridgeException
      */
-    public function retryNow(string $messageId): void
+    public function retryNow(string $messageId, ?string $clientName = null): SendResponse
     {
-        $this->request('POST', "/v1/messages/{$messageId}/retry-now");
+        return $this->messageActionResponse($messageId, "/v1/messages/{$messageId}/retry-now", $clientName);
     }
 
-    public function replayAllMessages(string $status, ?string $endpointId = null, ?int $limit = null): ReplayAllMessagesResponse
+    public function replayAllMessages(string $status, ?string $endpointId = null, ?int $limit = null, ?string $clientName = null): ReplayAllMessagesResponse
     {
         $params = ['status' => $status];
         if ($endpointId !== null) {
@@ -689,7 +727,7 @@ class HookBridge
             $params['limit'] = (string) $limit;
         }
 
-        $response = $this->request('POST', '/v1/messages/replay-all?' . http_build_query($params));
+        $response = $this->request('POST', '/v1/messages/replay-all?' . http_build_query($params), null, $this->clientNameHeaders($clientName));
         $data = $response['data'];
 
         return new ReplayAllMessagesResponse(
@@ -698,6 +736,7 @@ class HookBridge
             stuck: $data['stuck'],
             replayedMessageIds: $data['replayed_message_ids'] ?? [],
             stuckMessageIds: $data['stuck_message_ids'] ?? [],
+            message: $response['message'] ?? null,
         );
     }
 
@@ -722,9 +761,9 @@ class HookBridge
         return $this->fetchMessageActions('/v1/messages/' . rawurlencode($messageId) . '/actions', $cursor, $limit);
     }
 
-    public function replayBatchMessages(array $messageIds): ReplayBatchMessagesResponse
+    public function replayBatchMessages(array $messageIds, ?string $clientName = null): ReplayBatchMessagesResponse
     {
-        $response = $this->request('POST', '/v1/messages/replay-batch', ['message_ids' => $messageIds]);
+        $response = $this->request('POST', '/v1/messages/replay-batch', ['message_ids' => $messageIds], $this->clientNameHeaders($clientName));
         $data = $response['data'];
 
         return new ReplayBatchMessagesResponse(
@@ -740,6 +779,7 @@ class HookBridge
                 ),
                 $data['results'] ?? [],
             ),
+            message: $response['message'] ?? null,
         );
     }
 
@@ -816,9 +856,13 @@ class HookBridge
      *
      * @throws HookBridgeException
      */
-    public function getMetrics(string $window = '24h'): Metrics
+    public function getMetrics(string $window = '24h', ?string $endpointId = null): Metrics
     {
-        $response = $this->request('GET', "/v1/metrics?window={$window}");
+        $params = ['window' => $window];
+        if ($endpointId !== null) {
+            $params['endpoint_id'] = $endpointId;
+        }
+        $response = $this->request('GET', '/v1/metrics?' . http_build_query($params));
         $data = $response['data'];
 
         return new Metrics(
@@ -912,11 +956,15 @@ class HookBridge
      *
      * @param string $messageId The message ID to replay
      *
+     * @param string|null $clientName Per-call X-Hookbridge-Client override (printable ASCII)
+     *
+     * @return SendResponse The message ID and new status; status is '' if the server returned no body
+     *
      * @throws HookBridgeException
      */
-    public function replayFromDLQ(string $messageId): void
+    public function replayFromDLQ(string $messageId, ?string $clientName = null): SendResponse
     {
-        $this->request('POST', "/v1/dlq/replay/{$messageId}");
+        return $this->messageActionResponse($messageId, "/v1/dlq/replay/{$messageId}", $clientName);
     }
 
     /**
@@ -977,11 +1025,14 @@ class HookBridge
      *
      * @param string $keyId The API key ID to delete
      *
+     * @return DeleteResult
+     *
      * @throws HookBridgeException
      */
-    public function deleteAPIKey(string $keyId): void
+    public function deleteAPIKey(string $keyId): DeleteResult
     {
-        $this->request('DELETE', "/v1/api-keys/{$keyId}");
+        $data = $this->request('DELETE', "/v1/api-keys/{$keyId}")['data'] ?? [];
+        return new DeleteResult(deleted: $data['deleted'] ?? true, id: $data['id'] ?? null);
     }
 
     /**
@@ -1027,7 +1078,7 @@ class HookBridge
             $body['burst'] = $burst;
         }
         if ($headers !== null) {
-            $body['headers'] = $headers;
+            $body['headers'] = $this->jsonObject($headers);
         }
         if ($ephemeral !== null) {
             $body['ephemeral'] = $ephemeral;
@@ -1051,6 +1102,8 @@ class HookBridge
             ephemeral: $data['ephemeral'] ?? null,
             expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
             subscriptions: $this->parseSubscriptions($data['subscriptions'] ?? null),
+            signingKeyId: $data['signing_key_id'] ?? null,
+            keyHint: $data['key_hint'] ?? null,
         );
     }
 
@@ -1181,7 +1234,7 @@ class HookBridge
             $body['burst'] = $burst;
         }
         if ($headers !== null) {
-            $body['headers'] = $headers;
+            $body['headers'] = $this->jsonObject($headers);
         }
         if ($subscriptions !== null) {
             $body['subscriptions'] = $subscriptions->toArray();
@@ -1205,11 +1258,14 @@ class HookBridge
      *
      * @param string $endpointId The endpoint ID to delete
      *
+     * @return DeleteResult
+     *
      * @throws HookBridgeException
      */
-    public function deleteEndpoint(string $endpointId): void
+    public function deleteEndpoint(string $endpointId): DeleteResult
     {
-        $this->request('DELETE', "/v1/endpoints/{$endpointId}");
+        $data = $this->request('DELETE', "/v1/endpoints/{$endpointId}")['data'] ?? [];
+        return new DeleteResult(deleted: $data['deleted'] ?? true, id: $data['id'] ?? $endpointId);
     }
 
     public function pauseEndpoint(string $endpointId): PauseState
@@ -1248,6 +1304,8 @@ class HookBridge
         return new RotateSecretResponse(
             id: $data['id'],
             signingSecret: $data['signing_secret'],
+            keyHint: $data['key_hint'] ?? null,
+            createdAt: isset($data['created_at']) ? new DateTimeImmutable($data['created_at']) : null,
         );
     }
 
@@ -1384,7 +1442,10 @@ class HookBridge
 
     public function updatePullEndpoint(string $endpointId, array $attributes): PullEndpoint
     {
-        $data = $this->request('PATCH', "/v1/pull-endpoints/{$endpointId}", $attributes)['data'];
+        $data = $this->request('PATCH', "/v1/pull-endpoints/{$endpointId}", $attributes)['data'] ?? [];
+        if (!isset($data['ingest_url'], $data['created_at'], $data['updated_at'], $data['active'], $data['paused'])) {
+            return $this->getPullEndpoint($endpointId);
+        }
         return $this->parsePullEndpoint($data);
     }
 
@@ -1553,6 +1614,7 @@ class HookBridge
                         timeToAckMs: $entry['timing']['time_to_ack_ms'] ?? null,
                         totalLifecycleMs: $entry['timing']['total_lifecycle_ms'] ?? null,
                     ) : null,
+                    deletedAt: isset($entry['deleted_at']) ? new DateTimeImmutable($entry['deleted_at']) : null,
                 ),
                 $response['data']
             ),
@@ -1747,7 +1809,7 @@ class HookBridge
 
         return new InboundEndpointCreatedResponse(
             id: $data['id'],
-            name: $data['name'],
+            name: $data['name'] ?? '',
             url: $data['url'] ?? '',
             mode: $data['mode'] ?? 'forward',
             ingestUrl: $data['ingest_url'],
@@ -1789,8 +1851,8 @@ class HookBridge
                 ),
                 $response['data']
             ),
-            hasMore: isset($response['meta']['next_cursor']),
-            nextCursor: $response['meta']['next_cursor'] ?? null,
+            hasMore: ($response['meta']['next_cursor'] ?? '') !== '',
+            nextCursor: ($response['meta']['next_cursor'] ?? '') !== '' ? $response['meta']['next_cursor'] : null,
         );
     }
 
@@ -1817,6 +1879,7 @@ class HookBridge
             ephemeral: $data['ephemeral'] ?? null,
             expiresAt: isset($data['expires_at']) ? new DateTimeImmutable($data['expires_at']) : null,
             hmacSignatureEncoding: $data['hmac_signature_encoding'] ?? null,
+            ingestUrl: $data['ingest_url'] ?? null,
         );
     }
 
@@ -1851,6 +1914,8 @@ class HookBridge
         return new RotateSecretResponse(
             id: $data['id'],
             signingSecret: $data['signing_secret'],
+            keyHint: $data['key_hint'] ?? null,
+            createdAt: isset($data['created_at']) ? new DateTimeImmutable($data['created_at']) : null,
         );
     }
 
@@ -1899,10 +1964,11 @@ class HookBridge
         );
     }
 
-    public function replayInboundMessage(string $messageId): SendResponse
+    public function replayInboundMessage(string $messageId, ?string $clientName = null): SendResponse
     {
-        $data = $this->request('POST', "/v1/inbound-messages/{$messageId}/replay")['data'];
-        return new SendResponse(messageId: $data['message_id'], status: $data['status']);
+        $response = $this->request('POST', "/v1/inbound-messages/{$messageId}/replay", null, $this->clientNameHeaders($clientName));
+        $data = $response['data'];
+        return new SendResponse(messageId: $data['message_id'], status: $data['status'], message: $response['message'] ?? null);
     }
 
     public function getInboundMessage(string $messageId): InboundMessage
@@ -1920,7 +1986,7 @@ class HookBridge
         );
     }
 
-    public function replayAllInboundMessages(string $status, ?string $inboundEndpointId = null, ?int $limit = null): ReplayAllMessagesResponse
+    public function replayAllInboundMessages(string $status, ?string $inboundEndpointId = null, ?int $limit = null, ?string $clientName = null): ReplayAllMessagesResponse
     {
         $params = ['status' => $status];
         if ($inboundEndpointId !== null) {
@@ -1929,7 +1995,8 @@ class HookBridge
         if ($limit !== null) {
             $params['limit'] = (string) $limit;
         }
-        $data = $this->request('POST', '/v1/inbound-messages/replay-all?' . http_build_query($params))['data'];
+        $response = $this->request('POST', '/v1/inbound-messages/replay-all?' . http_build_query($params), null, $this->clientNameHeaders($clientName));
+        $data = $response['data'];
 
         return new ReplayAllMessagesResponse(
             replayed: $data['replayed'],
@@ -1937,6 +2004,7 @@ class HookBridge
             stuck: $data['stuck'],
             replayedMessageIds: $data['replayed_message_ids'] ?? [],
             stuckMessageIds: $data['stuck_message_ids'] ?? [],
+            message: $response['message'] ?? null,
         );
     }
 
@@ -1961,9 +2029,10 @@ class HookBridge
         return $this->fetchMessageActions('/v1/inbound-messages/' . rawurlencode($messageId) . '/actions', $cursor, $limit);
     }
 
-    public function replayBatchInboundMessages(array $messageIds): ReplayBatchMessagesResponse
+    public function replayBatchInboundMessages(array $messageIds, ?string $clientName = null): ReplayBatchMessagesResponse
     {
-        $data = $this->request('POST', '/v1/inbound-messages/replay-batch', ['message_ids' => $messageIds])['data'];
+        $response = $this->request('POST', '/v1/inbound-messages/replay-batch', ['message_ids' => $messageIds], $this->clientNameHeaders($clientName));
+        $data = $response['data'];
 
         return new ReplayBatchMessagesResponse(
             replayed: $data['replayed'],
@@ -1978,6 +2047,7 @@ class HookBridge
                 ),
                 $data['results'] ?? [],
             ),
+            message: $response['message'] ?? null,
         );
     }
 
@@ -2018,6 +2088,7 @@ class HookBridge
                     responseLatencyMs: $entry['response_latency_ms'] ?? null,
                     lastError: $entry['last_error'] ?? null,
                     totalDeliveryMs: $entry['total_delivery_ms'] ?? null,
+                    deletedAt: isset($entry['deleted_at']) ? new DateTimeImmutable($entry['deleted_at']) : null,
                 ),
                 $response['data']
             ),
@@ -2043,6 +2114,7 @@ class HookBridge
             successRate: $data['success_rate'],
             avgLatencyMs: $data['avg_latency_ms'],
             avgDeliveryTimeMs: $data['avg_delivery_time_ms'],
+            avgQueueWaitMs: $data['avg_queue_wait_ms'] ?? null,
         );
     }
 
@@ -2065,7 +2137,7 @@ class HookBridge
                     total: $bucket['total'],
                     avgLatencyMs: $bucket['avg_latency_ms'],
                 ),
-                $data['buckets']
+                $data['buckets'] ?? []
             ),
         );
     }
@@ -2368,9 +2440,9 @@ class HookBridge
      *
      * @throws HookBridgeException
      */
-    private function request(string $method, string $path, ?array $body = null): array
+    private function request(string $method, string $path, ?array $body = null, array $headers = []): array
     {
-        return $this->requestWithClient($this->client, $method, $path, $body);
+        return $this->requestWithClient($this->client, $method, $path, $body, false, $headers);
     }
 
     /**
@@ -2401,13 +2473,16 @@ class HookBridge
      *
      * @throws HookBridgeException
      */
-    private function requestWithClient(Client $httpClient, string $method, string $path, ?array $body = null, bool $allowRedirect = false): array
+    private function requestWithClient(Client $httpClient, string $method, string $path, ?array $body = null, bool $allowRedirect = false, array $headers = []): array
     {
         $lastException = null;
 
         for ($attempt = 0; $attempt <= $this->retries; $attempt++) {
             try {
                 $options = ['allow_redirects' => !$allowRedirect];
+                if ($headers !== []) {
+                    $options['headers'] = $headers;
+                }
                 if ($body !== null) {
                     $options['json'] = $body;
                 }
@@ -2661,6 +2736,7 @@ class HookBridge
             eventType: $data['event_type'] ?? null,
             eventId: $data['event_id'] ?? null,
             isTest: $data['is_test'] ?? null,
+            failedAt: isset($data['failed_at']) ? new DateTimeImmutable($data['failed_at']) : null,
         );
     }
 
