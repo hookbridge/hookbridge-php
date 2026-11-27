@@ -48,7 +48,7 @@ $client->deleteEndpoint($endpoint->id);
 
 ## Client Name
 
-Pass `clientName` to send an `X-Hookbridge-Client` header on every request. The server records it in the audit trail of replay, retry, and cancel actions. It must be printable ASCII (the server truncates to 200 bytes) and is not authenticated; a value with other characters throws `ValidationException`.
+Pass `clientName` to send an `X-Hookbridge-Client` header on every request. The server records it in the audit trail of replay, retry, and cancel actions. It must be printable ASCII (the server truncates to 200 bytes) and is not authenticated; a value with other characters throws `ValidationException`. Replay, retry, cancel and replay-all/batch methods also accept a per-call `clientName` that overrides the client-level value for that request only. `deleteEndpoint()` and `deleteAPIKey()` return a `DeleteResult`; `replay()`, `cancelRetry()`, `retryNow()` and `replayFromDLQ()` return a `SendResponse`.
 
 ```php
 $client = new HookBridge('hb_live_xxxxxxxxxxxxxxxxxxxx', clientName: 'billing-service/1.4');
@@ -72,7 +72,9 @@ $timeseries = $client->getTimeseriesMetrics(endpointId: $endpoint->id);
 // Messages and log entries sent from an event carry eventType, eventId and isTest (null otherwise)
 echo $message->eventType;
 
-$client->replay($message->id);
+$replayed = $client->replay($message->id); // SendResponse: messageId, status, message
+$client->replay($message->id, clientName: 'ops-console'); // per-call X-Hookbridge-Client override (replay, cancelRetry, retryNow, replayFromDLQ, replayAll*/replayBatch*)
+$endpointMetrics = $client->getMetrics('24h', $endpoint->id);
 $client->replayAllMessages('failed_permanent', $endpoint->id, 50);
 
 $preview = $client->replayAllMessagesDryRun('failed_permanent', $endpoint->id, 50);

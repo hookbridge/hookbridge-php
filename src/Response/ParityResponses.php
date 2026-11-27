@@ -14,6 +14,7 @@ readonly class ReplayAllMessagesResponse
         public int $stuck,
         public array $replayedMessageIds,
         public array $stuckMessageIds,
+        public ?string $message = null,
     ) {}
 }
 
@@ -66,6 +67,7 @@ readonly class ReplayBatchMessagesResponse
         public int $failed,
         public int $stuck,
         public array $results,
+        public ?string $message = null,
     ) {}
 }
 
@@ -275,6 +277,7 @@ readonly class InboundEndpoint
         public ?bool $ephemeral = null,
         public ?DateTimeImmutable $expiresAt = null,
         public ?string $hmacSignatureEncoding = null,
+        public ?string $ingestUrl = null,
     ) {}
 }
 
@@ -494,6 +497,7 @@ readonly class PullLogEntry
         public ?DateTimeImmutable $fetchedAt = null,
         public ?DateTimeImmutable $deliveredAt = null,
         public ?PullTimingBreakdown $timing = null,
+        public ?DateTimeImmutable $deletedAt = null,
     ) {}
 }
 
@@ -520,6 +524,7 @@ readonly class InboundLogEntry
         public ?int $responseLatencyMs = null,
         public ?string $lastError = null,
         public ?int $totalDeliveryMs = null,
+        public ?DateTimeImmutable $deletedAt = null,
     ) {}
 }
 
@@ -543,6 +548,7 @@ readonly class InboundMetrics
         public float $successRate,
         public int $avgLatencyMs,
         public int $avgDeliveryTimeMs,
+        public ?int $avgQueueWaitMs = null,
     ) {}
 }
 

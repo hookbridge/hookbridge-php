@@ -12,5 +12,6 @@ readonly class SendResponse
     public function __construct(
         public string $messageId,
         public string $status,
+        public ?string $message = null,
     ) {}
 }
