@@ -665,12 +665,13 @@ class HookBridge
 
     private function messageActionResponse(string $messageId, string $path, ?string $clientName): SendResponse
     {
-        $data = $this->request('POST', $path, null, $this->clientNameHeaders($clientName))['data'] ?? [];
+        $response = $this->request('POST', $path, null, $this->clientNameHeaders($clientName));
+        $data = $response['data'] ?? [];
 
         return new SendResponse(
             messageId: $data['message_id'] ?? $messageId,
             status: $data['status'] ?? '',
-            message: $data['message'] ?? null,
+            message: $response['message'] ?? null,
         );
     }
 
@@ -735,7 +736,7 @@ class HookBridge
             stuck: $data['stuck'],
             replayedMessageIds: $data['replayed_message_ids'] ?? [],
             stuckMessageIds: $data['stuck_message_ids'] ?? [],
-            message: $data['message'] ?? null,
+            message: $response['message'] ?? null,
         );
     }
 
@@ -778,7 +779,7 @@ class HookBridge
                 ),
                 $data['results'] ?? [],
             ),
-            message: $data['message'] ?? null,
+            message: $response['message'] ?? null,
         );
     }
 
@@ -1965,8 +1966,9 @@ class HookBridge
 
     public function replayInboundMessage(string $messageId, ?string $clientName = null): SendResponse
     {
-        $data = $this->request('POST', "/v1/inbound-messages/{$messageId}/replay", null, $this->clientNameHeaders($clientName))['data'];
-        return new SendResponse(messageId: $data['message_id'], status: $data['status'], message: $data['message'] ?? null);
+        $response = $this->request('POST', "/v1/inbound-messages/{$messageId}/replay", null, $this->clientNameHeaders($clientName));
+        $data = $response['data'];
+        return new SendResponse(messageId: $data['message_id'], status: $data['status'], message: $response['message'] ?? null);
     }
 
     public function getInboundMessage(string $messageId): InboundMessage
@@ -1993,7 +1995,8 @@ class HookBridge
         if ($limit !== null) {
             $params['limit'] = (string) $limit;
         }
-        $data = $this->request('POST', '/v1/inbound-messages/replay-all?' . http_build_query($params), null, $this->clientNameHeaders($clientName))['data'];
+        $response = $this->request('POST', '/v1/inbound-messages/replay-all?' . http_build_query($params), null, $this->clientNameHeaders($clientName));
+        $data = $response['data'];
 
         return new ReplayAllMessagesResponse(
             replayed: $data['replayed'],
@@ -2001,7 +2004,7 @@ class HookBridge
             stuck: $data['stuck'],
             replayedMessageIds: $data['replayed_message_ids'] ?? [],
             stuckMessageIds: $data['stuck_message_ids'] ?? [],
-            message: $data['message'] ?? null,
+            message: $response['message'] ?? null,
         );
     }
 
@@ -2028,7 +2031,8 @@ class HookBridge
 
     public function replayBatchInboundMessages(array $messageIds, ?string $clientName = null): ReplayBatchMessagesResponse
     {
-        $data = $this->request('POST', '/v1/inbound-messages/replay-batch', ['message_ids' => $messageIds], $this->clientNameHeaders($clientName))['data'];
+        $response = $this->request('POST', '/v1/inbound-messages/replay-batch', ['message_ids' => $messageIds], $this->clientNameHeaders($clientName));
+        $data = $response['data'];
 
         return new ReplayBatchMessagesResponse(
             replayed: $data['replayed'],
@@ -2043,7 +2047,7 @@ class HookBridge
                 ),
                 $data['results'] ?? [],
             ),
-            message: $data['message'] ?? null,
+            message: $response['message'] ?? null,
         );
     }
 

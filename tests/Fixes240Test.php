@@ -192,7 +192,7 @@ final class Fixes240Test extends TestCase
     public function testReplayReturnsSendResponse(): void
     {
         $history = [];
-        $client = $this->makeClient([$this->json(['data' => ['message_id' => 'm1', 'status' => 'pending', 'message' => 'queued']])], $history);
+        $client = $this->makeClient([$this->json(['message' => 'queued', 'data' => ['message_id' => 'm1', 'status' => 'pending']])], $history);
 
         $result = $client->replay('m1');
 
@@ -278,7 +278,7 @@ final class Fixes240Test extends TestCase
     public function testReplayAllMessagesMapsMessage(): void
     {
         $history = [];
-        $client = $this->makeClient([$this->json(['data' => ['replayed' => 1, 'failed' => 0, 'stuck' => 0, 'message' => 'done']])], $history);
+        $client = $this->makeClient([$this->json(['message' => 'done', 'data' => ['replayed' => 1, 'failed' => 0, 'stuck' => 0]])], $history);
 
         self::assertSame('done', $client->replayAllMessages('failed_permanent')->message);
     }
@@ -286,7 +286,7 @@ final class Fixes240Test extends TestCase
     public function testReplayBatchMessagesMapsMessage(): void
     {
         $history = [];
-        $client = $this->makeClient([$this->json(['data' => ['replayed' => 1, 'failed' => 0, 'stuck' => 0, 'message' => 'done']])], $history);
+        $client = $this->makeClient([$this->json(['message' => 'done', 'data' => ['replayed' => 1, 'failed' => 0, 'stuck' => 0]])], $history);
 
         self::assertSame('done', $client->replayBatchMessages(['m1'])->message);
     }
@@ -294,9 +294,9 @@ final class Fixes240Test extends TestCase
     public function testInboundReplayResponsesMapMessage(): void
     {
         $history = [];
-        $bulk = ['data' => ['replayed' => 1, 'failed' => 0, 'stuck' => 0, 'message' => 'done']];
+        $bulk = ['message' => 'done', 'data' => ['replayed' => 1, 'failed' => 0, 'stuck' => 0]];
         $client = $this->makeClient([
-            $this->json(['data' => ['message_id' => 'm1', 'status' => 'pending', 'message' => 'hi']]),
+            $this->json(['message' => 'hi', 'data' => ['message_id' => 'm1', 'status' => 'pending']]),
             $this->json($bulk),
             $this->json($bulk),
         ], $history);
