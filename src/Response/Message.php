@@ -37,5 +37,8 @@ readonly class Message
         public ?DateTimeImmutable $deletedAt = null,
         public ?string $deletedByUserId = null,
         public ?string $deletedByApiKeyId = null,
+        public ?string $eventType = null,
+        public ?string $eventId = null,
+        public ?bool $isTest = null,
     ) {}
 }

@@ -24,5 +24,8 @@ readonly class MessageSummary
         public ?int $totalDeliveryMs = null,
         public ?int $queueWaitMs = null,
         public ?string $deletedAt = null,
+        public ?string $eventType = null,
+        public ?string $eventId = null,
+        public ?bool $isTest = null,
     ) {}
 }
